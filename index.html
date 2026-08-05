@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="住宅会社向け商談記録ツール・ベクトルシート">
+    <title>ベクトルシート</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <header class="app-header no-print">
+      <a class="brand" href="#sheets" aria-label="商談シート一覧へ戻る">
+        <span class="brand-logo-crop">
+          <img class="brand-logo" src="logo_clr.png" alt="NEST HOUSE">
+        </span>
+      </a>
+      <nav aria-label="メインナビゲーション">
+        <a href="#sheets">商談シート一覧</a>
+      </nav>
+    </header>
+
+    <main id="app" tabindex="-1"></main>
+
+    <footer class="app-footer no-print">
+      <div>
+        <strong>ブラウザ内保存</strong>
+        <span>入力内容と添付画像はこのブラウザ内に保存され、別の端末には共有されません。</span>
+      </div>
+      <div class="footer-actions">
+        <button type="button" class="button button-danger-quiet" id="clear-data">すべてのデータを削除</button>
+      </div>
+    </footer>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <button type="button" class="back-to-top no-print" aria-label="ページ上部へ戻る">↑ 上へ</button>
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
