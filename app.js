@@ -1,10 +1,6 @@
-(function () {
+﻿(function () {
   "use strict";
 
-  const STORAGE_KEY = "meetingVectorSheetAppV2";
-  const IMAGE_DB_NAME = "meetingVectorSheetImagesV2";
-  const IMAGE_DB_VERSION = 1;
-  const IMAGE_STORE_NAME = "images";
   const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
   const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
   const app = document.getElementById("app");
@@ -41,49 +37,54 @@
   const CUSTOMER_OUTPUT_ORDER = ["scheduleReason", "budget", "building", "land", "image"];
   const CURRENT_STATUS_FIELDS = [
     { key: "currentResidence", label: "今のお住まい" },
-    { key: "currentRent", label: "今の家賃" },
-    { key: "ownFunds", label: "自己資金" },
-    { key: "annualIncome", label: "ご年収" },
+    { key: "currentRent", label: "今の家賃", unit: "万円", money: true },
+    { key: "ownFunds", label: "自己資金", unit: "万円", money: true },
+    { key: "annualIncome", label: "ご年収", unit: "万円", money: true },
     { key: "desiredArea", label: "住みたい場所" }
+  ];
+  const MONEY_STATUS_KEYS = new Set(CURRENT_STATUS_FIELDS.filter(function (field) { return field.money; }).map(function (field) { return field.key; }));
+  const CSV_COLUMNS = [
+    "sheetId",
+    "customerName",
+    "meetingDate",
+    "meetingNumber",
+    "title",
+    "currentResidence",
+    "currentRent",
+    "ownFunds",
+    "annualIncome",
+    "desiredArea",
+    "scheduleReason",
+    "budget",
+    "building",
+    "land",
+    "wife",
+    "husband",
+    "parents"
   ];
 
   let state = loadAppData();
   let pendingSaveTimer = null;
   let saveStatusNode = null;
+  let currentView = { name: "start", sheetId: null, mode: "input" };
   const issuedIds = new Set();
   const activeObjectUrls = new Set();
-  let imageDatabasePromise = null;
+  const imageMemoryStore = new Map();
+  let imageStoreReadyPromise = null;
   let activeImageRenderPromises = [];
 
   // ---------------------------------------------------------------------------
-  // Data layer. These functions are intentionally independent from rendering so
-  // localStorage can later be replaced with API calls.
+  // Data layer. Customer and meeting data is kept only in JavaScript memory
+  // while the page is open. CSV import/export is the only durable handoff.
   // ---------------------------------------------------------------------------
 
   function loadAppData() {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return normalizeAppData(JSON.parse(saved));
-      const empty = window.AppData.createEmptyData();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(empty));
-      return empty;
-    } catch (error) {
-      console.warn("保存データを読み込めなかったため、空の状態で開始します。", error);
-      return window.AppData.createEmptyData();
-    }
+    return window.AppData.createEmptyData();
   }
 
   function saveAppData() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      setSaveStatus("保存しました", true);
-      return true;
-    } catch (error) {
-      console.error("データを保存できませんでした。", error);
-      setSaveStatus("保存できませんでした", false);
-      showToast("保存できませんでした。ブラウザの保存設定をご確認ください。", true);
-      return false;
-    }
+    setSaveStatus("ブラウザには保存されません。必要に応じてCSVを書き出してください。", false);
+    return true;
   }
 
   function normalizeAppData(data) {
@@ -109,9 +110,24 @@
   function normalizeCurrentStatus(source) {
     const values = source || {};
     return CURRENT_STATUS_FIELDS.reduce(function (result, field) {
-      result[field.key] = String(values[field.key] || "");
+      const value = String(values[field.key] || "");
+      result[field.key] = field.money ? normalizeMoneyInput(value) : value;
       return result;
     }, {});
+  }
+
+  function normalizeMoneyInput(value) {
+    return String(value || "")
+      .replace(/[０-９]/g, function (char) { return String.fromCharCode(char.charCodeAt(0) - 0xFEE0); })
+      .replace(/万円/g, "")
+      .replace(/[,\s]/g, "")
+      .replace(/[^\d.]/g, "");
+  }
+
+  function formatCurrentStatusValue(key, value) {
+    const normalized = MONEY_STATUS_KEYS.has(key) ? normalizeMoneyInput(value) : String(value || "").trim();
+    if (!normalized) return "";
+    return MONEY_STATUS_KEYS.has(key) ? normalized + "万円" : normalized;
   }
 
   function normalizeSheet(source) {
@@ -215,41 +231,6 @@
     return sheet;
   }
 
-  function createNextSheet(sourceSheetId) {
-    flushPendingSave();
-    const source = getSheetById(sourceSheetId);
-    if (!source) return null;
-    const now = new Date().toISOString();
-    const next = {
-      sheetId: generateUniqueId("S"),
-      customerName: source.customerName,
-      meetingDate: todayIso(),
-      meetingNumber: Number(source.meetingNumber || 0) + 1,
-      title: "",
-      currentStatus: normalizeCurrentStatus(source.currentStatus),
-      coreNotes: window.AppData.createCoreNotes(),
-      stakeholderNotes: source.stakeholderNotes.map(function (item) {
-        const id = generateUniqueId("ST");
-        return {
-          id: id,
-          type: item.type,
-          key: item.type === "custom" ? "custom_" + id : item.key,
-          label: item.label,
-          content: "",
-          deletable: item.type === "custom"
-        };
-      }),
-      attachments: [],
-      customerPreview: window.AppData.createCustomerPreview([]),
-      createdAt: now,
-      updatedAt: now
-    };
-    state.sheets.push(next);
-    state.activeSheetId = next.sheetId;
-    saveAppData();
-    return next;
-  }
-
   function updateSheet(sheetId, data) {
     const sheet = getSheetById(sheetId);
     if (!sheet) return null;
@@ -274,8 +255,7 @@
   }
 
   async function clearLocalData() {
-    await deleteImageDatabase();
-    localStorage.removeItem(STORAGE_KEY);
+    await clearImageMemoryStore();
     issuedIds.clear();
     state = window.AppData.createEmptyData();
   }
@@ -293,7 +273,7 @@
     const sheet = getSheetById(sheetId);
     if (!sheet || !CURRENT_STATUS_FIELDS.some(function (field) { return field.key === key; })) return;
     sheet.currentStatus = normalizeCurrentStatus(sheet.currentStatus);
-    sheet.currentStatus[key] = String(value || "");
+    sheet.currentStatus[key] = MONEY_STATUS_KEYS.has(key) ? normalizeMoneyInput(value) : String(value || "");
     scheduleSave(sheet);
   }
 
@@ -497,8 +477,8 @@
         sheet.customerPreview.visibleImageIds.push(imageId);
         added.push(metadata);
       } catch (error) {
-        console.error("画像を保存できませんでした。", error);
-        errors.push(file.name + "：画像を保存できませんでした");
+        console.error("画像を追加できませんでした。", error);
+        errors.push(file.name + "：画像を追加できませんでした");
       }
     }
     if (added.length) {
@@ -519,104 +499,46 @@
   }
 
   // ---------------------------------------------------------------------------
-  // IndexedDB image repository. Only metadata is kept in localStorage.
+  // In-memory image repository. Images are available only while this page is open.
   // ---------------------------------------------------------------------------
 
-  function openImageDatabase() {
-    if (imageDatabasePromise) return imageDatabasePromise;
-    imageDatabasePromise = new Promise(function (resolve, reject) {
-      if (!window.indexedDB) {
-        reject(new Error("このブラウザは画像保存に対応していません"));
-        return;
-      }
-      const request = window.indexedDB.open(IMAGE_DB_NAME, IMAGE_DB_VERSION);
-      request.onupgradeneeded = function () {
-        const database = request.result;
-        const store = database.objectStoreNames.contains(IMAGE_STORE_NAME)
-          ? request.transaction.objectStore(IMAGE_STORE_NAME)
-          : database.createObjectStore(IMAGE_STORE_NAME, { keyPath: "imageId" });
-        if (!store.indexNames.contains("sheetId")) store.createIndex("sheetId", "sheetId", { unique: false });
-      };
-      request.onsuccess = function () { resolve(request.result); };
-      request.onerror = function () { reject(request.error || new Error("画像データベースを開けませんでした")); };
-      request.onblocked = function () { reject(new Error("画像データベースの更新がブロックされました")); };
-    });
-    return imageDatabasePromise;
+  function openImageMemoryStore() {
+    if (!imageStoreReadyPromise) imageStoreReadyPromise = Promise.resolve({ type: "memory" });
+    return imageStoreReadyPromise;
   }
 
   async function saveImageBlob(imageData) {
-    const database = await openImageDatabase();
-    return new Promise(function (resolve, reject) {
-      const transaction = database.transaction(IMAGE_STORE_NAME, "readwrite");
-      transaction.objectStore(IMAGE_STORE_NAME).put(imageData);
-      transaction.oncomplete = function () { resolve(imageData); };
-      transaction.onerror = function () { reject(transaction.error || new Error("画像を保存できませんでした")); };
-      transaction.onabort = function () { reject(transaction.error || new Error("画像の保存が中断されました")); };
-    });
+    await openImageMemoryStore();
+    imageMemoryStore.set(imageData.imageId, imageData);
+    return imageData;
   }
 
   async function getImageBlob(imageId) {
-    const database = await openImageDatabase();
-    return new Promise(function (resolve, reject) {
-      const request = database.transaction(IMAGE_STORE_NAME, "readonly").objectStore(IMAGE_STORE_NAME).get(imageId);
-      request.onsuccess = function () { resolve(request.result || null); };
-      request.onerror = function () { reject(request.error || new Error("画像を読み込めませんでした")); };
-    });
+    await openImageMemoryStore();
+    return imageMemoryStore.get(imageId) || null;
   }
 
   async function getImagesBySheetId(sheetId) {
-    const database = await openImageDatabase();
-    return new Promise(function (resolve, reject) {
-      const request = database.transaction(IMAGE_STORE_NAME, "readonly").objectStore(IMAGE_STORE_NAME).index("sheetId").getAll(sheetId);
-      request.onsuccess = function () { resolve(request.result || []); };
-      request.onerror = function () { reject(request.error || new Error("シート画像を読み込めませんでした")); };
-    });
+    await openImageMemoryStore();
+    return Array.from(imageMemoryStore.values()).filter(function (item) { return item.sheetId === sheetId; });
   }
 
   async function deleteImageBlob(imageId) {
-    const database = await openImageDatabase();
-    return new Promise(function (resolve, reject) {
-      const transaction = database.transaction(IMAGE_STORE_NAME, "readwrite");
-      transaction.objectStore(IMAGE_STORE_NAME).delete(imageId);
-      transaction.oncomplete = function () { resolve(); };
-      transaction.onerror = function () { reject(transaction.error || new Error("画像を削除できませんでした")); };
-      transaction.onabort = function () { reject(transaction.error || new Error("画像の削除が中断されました")); };
-    });
+    await openImageMemoryStore();
+    imageMemoryStore.delete(imageId);
   }
 
   async function deleteImagesBySheetId(sheetId) {
-    const database = await openImageDatabase();
-    return new Promise(function (resolve, reject) {
-      const transaction = database.transaction(IMAGE_STORE_NAME, "readwrite");
-      const request = transaction.objectStore(IMAGE_STORE_NAME).index("sheetId").openCursor(window.IDBKeyRange.only(sheetId));
-      request.onsuccess = function () {
-        const cursor = request.result;
-        if (!cursor) return;
-        cursor.delete();
-        cursor.continue();
-      };
-      transaction.oncomplete = function () { resolve(); };
-      transaction.onerror = function () { reject(transaction.error || new Error("シート画像を削除できませんでした")); };
-      transaction.onabort = function () { reject(transaction.error || new Error("シート画像の削除が中断されました")); };
+    await openImageMemoryStore();
+    Array.from(imageMemoryStore.keys()).forEach(function (imageId) {
+      const item = imageMemoryStore.get(imageId);
+      if (item && item.sheetId === sheetId) imageMemoryStore.delete(imageId);
     });
   }
 
-  async function deleteImageDatabase() {
-    if (imageDatabasePromise) {
-      try {
-        const database = await imageDatabasePromise;
-        database.close();
-      } catch (error) {
-        console.warn("画像データベースを閉じられませんでした。", error);
-      }
-      imageDatabasePromise = null;
-    }
-    return new Promise(function (resolve, reject) {
-      const request = window.indexedDB.deleteDatabase(IMAGE_DB_NAME);
-      request.onsuccess = function () { resolve(); };
-      request.onerror = function () { reject(request.error || new Error("画像データベースを削除できませんでした")); };
-      request.onblocked = function () { reject(new Error("別の画面で画像データベースが使用されています")); };
-    });
+  async function clearImageMemoryStore() {
+    imageMemoryStore.clear();
+    imageStoreReadyPromise = null;
   }
 
   async function createImageObjectUrl(imageId) {
@@ -674,19 +596,15 @@
 
   function scheduleSave(sheet) {
     sheet.updatedAt = new Date().toISOString();
-    setSaveStatus("保存中…", false);
+    setSaveStatus("メモリ保持中：CSV未書き出しの内容は再読み込みで消えます", false);
     window.clearTimeout(pendingSaveTimer);
-    pendingSaveTimer = window.setTimeout(function () {
-      pendingSaveTimer = null;
-      saveAppData();
-    }, 550);
+    pendingSaveTimer = null;
   }
 
   function flushPendingSave() {
     if (!pendingSaveTimer) return;
     window.clearTimeout(pendingSaveTimer);
     pendingSaveTimer = null;
-    saveAppData();
   }
 
   // Public functions make the data boundary easy to inspect and replace.
@@ -696,7 +614,6 @@
     getActiveSheet: getActiveSheet,
     getSheetById: getSheetById,
     createBlankSheet: createBlankSheet,
-    createNextSheet: createNextSheet,
     updateSheet: updateSheet,
     deleteSheet: deleteSheet,
     setActiveSheet: setActiveSheet,
@@ -713,13 +630,18 @@
     toggleCustomerPreviewCategory: toggleCustomerPreviewCategory,
     getCustomerPreviewContent: getCustomerPreviewContent,
     getAutomaticCustomerPreviewCategories: getAutomaticCustomerPreviewCategories,
-    openImageDatabase: openImageDatabase,
+    createPractitionerCsv: createPractitionerCsv,
+    createCsvFileName: createCsvFileName,
+    importPractitionerCsvText: importPractitionerCsvText,
+    importPractitionerCsvFile: importPractitionerCsvFile,
+    exportPractitionerCsv: exportPractitionerCsv,
+    openImageMemoryStore: openImageMemoryStore,
     saveImageBlob: saveImageBlob,
     getImageBlob: getImageBlob,
     getImagesBySheetId: getImagesBySheetId,
     deleteImageBlob: deleteImageBlob,
     deleteImagesBySheetId: deleteImagesBySheetId,
-    deleteImageDatabase: deleteImageDatabase,
+    clearImageMemoryStore: clearImageMemoryStore,
     addImagesToCategory: addImagesToCategory,
     updateImageCaption: updateImageCaption,
     toggleImageCustomerOutput: toggleImageCustomerOutput,
@@ -772,7 +694,7 @@
   }
 
   function formatDateTime(value) {
-    if (!value) return "未保存";
+    if (!value) return "未更新";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return String(value);
     return new Intl.DateTimeFormat("ja-JP", {
@@ -794,6 +716,214 @@
     showToast.timer = window.setTimeout(function () { toast.classList.remove("is-visible"); }, 2600);
   }
 
+  function createStorageNotice() {
+    return el("aside", { className: "panel storage-notice no-print" },
+      el("strong", { text: "このシートの内容はブラウザに保存されません。" }),
+      el("p", { text: "後日編集する場合は、実務者用CSVを書き出して保管してください。" })
+    );
+  }
+
+  function createCsvSecurityNotice() {
+    return el("p", { className: "csv-security-note no-print", text: "CSVにはお客様情報が含まれます。保管・共有先にご注意ください。" });
+  }
+
+  function getStakeholderContent(sheet, key) {
+    const stakeholder = sheet.stakeholderNotes.find(function (item) { return item.key === key; });
+    return stakeholder ? stakeholder.content : "";
+  }
+
+  function getCsvValue(sheet, key) {
+    if (key === "sheetId") return sheet.sheetId;
+    if (key === "customerName") return sheet.customerName;
+    if (key === "meetingDate") return sheet.meetingDate;
+    if (key === "meetingNumber") return String(sheet.meetingNumber || 1);
+    if (key === "title") return sheet.title;
+    if (CURRENT_STATUS_FIELDS.some(function (field) { return field.key === key; })) {
+      const value = sheet.currentStatus ? sheet.currentStatus[key] : "";
+      return MONEY_STATUS_KEYS.has(key) ? normalizeMoneyInput(value) : String(value || "");
+    }
+    if (isCoreKey(key)) return getCoreNoteContent(sheet, key);
+    if (["wife", "husband", "parents"].includes(key)) return getStakeholderContent(sheet, key);
+    return "";
+  }
+
+  function escapeCsvValue(value) {
+    return "\"" + String(value === undefined || value === null ? "" : value).replace(/"/g, "\"\"") + "\"";
+  }
+
+  function createPractitionerCsv(sheet) {
+    const header = CSV_COLUMNS.join(",");
+    const values = CSV_COLUMNS.map(function (key) { return escapeCsvValue(getCsvValue(sheet, key)); }).join(",");
+    return "\uFEFF" + header + "\r\n" + values + "\r\n";
+  }
+
+  function safeFileNamePart(value, fallback) {
+    const text = String(value || "").trim() || fallback;
+    return text.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_");
+  }
+
+  function createCsvFileName(sheet) {
+    return "ベクトルシート_" + safeFileNamePart(sheet.customerName, "お客様名未設定") + "_" + safeFileNamePart(sheet.meetingDate, todayIso()) + ".csv";
+  }
+
+  function downloadTextFile(fileName, text, type) {
+    const blob = new Blob([text], { type: type || "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    activeObjectUrls.add(url);
+    const link = el("a", { href: url, attrs: { download: fileName } });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+
+  function exportPractitionerCsv(sheetId) {
+    flushPendingSave();
+    const sheet = getSheetById(sheetId);
+    if (!sheet) return;
+    const csv = createPractitionerCsv(sheet);
+    downloadTextFile(createCsvFileName(sheet), csv, "text/csv;charset=utf-8");
+    showToast("実務者用CSVを書き出しました。");
+  }
+
+  function parseCsv(text) {
+    const rows = [];
+    let row = [];
+    let value = "";
+    let quoted = false;
+    const source = String(text || "").replace(/^\uFEFF/, "");
+    for (let index = 0; index < source.length; index += 1) {
+      const char = source[index];
+      const next = source[index + 1];
+      if (quoted) {
+        if (char === "\"" && next === "\"") {
+          value += "\"";
+          index += 1;
+        } else if (char === "\"") {
+          quoted = false;
+        } else {
+          value += char;
+        }
+      } else if (char === "\"") {
+        quoted = true;
+      } else if (char === ",") {
+        row.push(value);
+        value = "";
+      } else if (char === "\n") {
+        row.push(value);
+        rows.push(row);
+        row = [];
+        value = "";
+      } else if (char !== "\r") {
+        value += char;
+      }
+    }
+    if (value !== "" || row.length) {
+      row.push(value);
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  function createSheetFromCsvRecord(record) {
+    const now = new Date().toISOString();
+    const sheet = {
+      sheetId: String(record.sheetId || generateUniqueId("S")),
+      customerName: String(record.customerName || ""),
+      meetingDate: String(record.meetingDate || todayIso()),
+      meetingNumber: Math.max(1, Number(record.meetingNumber || 1)),
+      title: String(record.title || ""),
+      currentStatus: {
+        currentResidence: String(record.currentResidence || ""),
+        currentRent: normalizeMoneyInput(record.currentRent || ""),
+        ownFunds: normalizeMoneyInput(record.ownFunds || ""),
+        annualIncome: normalizeMoneyInput(record.annualIncome || ""),
+        desiredArea: String(record.desiredArea || "")
+      },
+      coreNotes: window.AppData.createCoreNotes({
+        scheduleReason: record.scheduleReason || "",
+        budget: record.budget || "",
+        building: record.building || "",
+        land: record.land || ""
+      }),
+      stakeholderNotes: createDefaultStakeholders(),
+      attachments: [],
+      customerPreview: window.AppData.createCustomerPreview([]),
+      createdAt: now,
+      updatedAt: now
+    };
+    ["wife", "husband", "parents"].forEach(function (key) {
+      const stakeholder = sheet.stakeholderNotes.find(function (item) { return item.key === key; });
+      if (stakeholder) stakeholder.content = String(record[key] || "");
+    });
+    return normalizeSheet(sheet);
+  }
+
+  function importPractitionerCsvText(text) {
+    const rows = parseCsv(text).filter(function (row) {
+      return row.some(function (value) { return String(value || "").trim() !== ""; });
+    });
+    if (rows.length < 2) throw new Error("CSVにデータ行がありません。");
+    const headers = rows[0].map(function (header) { return String(header || "").trim(); });
+    const values = rows[1] || [];
+    const record = {};
+    headers.forEach(function (header, index) {
+      if (header) record[header] = values[index] || "";
+    });
+    const sheet = createSheetFromCsvRecord(record);
+    state.sheets = [sheet];
+    state.activeSheetId = sheet.sheetId;
+    issuedIds.add(sheet.sheetId);
+    ensureCustomerPreviewShape(sheet);
+    syncAutomaticCustomerPreviewVisibility(sheet);
+    return sheet;
+  }
+
+  async function importPractitionerCsvFile(file) {
+    if (!file) return null;
+    const text = await file.text();
+    const sheet = importPractitionerCsvText(text);
+    showToast("実務者用CSVを読み込みました。");
+    navigateToSheet(sheet.sheetId, "input");
+    return sheet;
+  }
+
+  function createCsvImportControl(label) {
+    const inputId = "csv-import-" + Math.random().toString(36).slice(2, 8);
+    const fileInput = el("input", {
+      id: inputId,
+      type: "file",
+      className: "csv-file-input",
+      attrs: { accept: ".csv,text/csv" }
+    });
+    const button = el("button", { className: "button button-secondary", type: "button", text: label || "実務者用CSVを読み込む" });
+    button.addEventListener("click", function () { fileInput.click(); });
+    fileInput.addEventListener("change", async function () {
+      const file = fileInput.files && fileInput.files[0];
+      fileInput.value = "";
+      if (!file) return;
+      button.disabled = true;
+      try {
+        await importPractitionerCsvFile(file);
+      } catch (error) {
+        console.error("実務者用CSVを読み込めませんでした。", error);
+        showToast("実務者用CSVを読み込めませんでした。形式を確認してください。", true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return el("span", { className: "csv-import-control" }, fileInput, button);
+  }
+
+  function createCsvExportButton(sheetId, small) {
+    const button = el("button", {
+      className: "button button-secondary" + (small ? " button-small" : ""),
+      type: "button",
+      text: "実務者用CSVを書き出す"
+    });
+    button.addEventListener("click", function () { exportPractitionerCsv(sheetId); });
+    return button;
+  }
+
   function updateBackToTopVisibility() {
     if (!backToTopButton) return;
     backToTopButton.classList.toggle("is-visible", window.scrollY > 400);
@@ -801,6 +931,27 @@
 
   function scrollToPageTop() {
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function navigateToStart() {
+    currentView = { name: "start", sheetId: null, mode: "input" };
+    renderApp();
+  }
+
+  function navigateToNewSheet() {
+    currentView = { name: "new", sheetId: null, mode: "input" };
+    renderApp();
+  }
+
+  function navigateToSheet(sheetId, mode) {
+    currentView = { name: "sheet", sheetId: sheetId, mode: mode || "input" };
+    renderApp();
+  }
+
+  function createNavButton(className, text, onClick) {
+    const button = el("button", { className: className, type: "button", text: text });
+    button.addEventListener("click", onClick);
+    return button;
   }
 
   function confirmAction(message) {
@@ -822,7 +973,8 @@
     const id = config.id || "field-" + name + "-" + Math.random().toString(36).slice(2, 7);
     const input = el("input", {
       id: id, name: name, type: type, value: value === undefined ? "" : value,
-      placeholder: config.placeholder || "", required: config.required, min: config.min
+      placeholder: config.placeholder || "", required: config.required, min: config.min,
+      attrs: config.attrs || null
     });
     return {
       input: input,
@@ -854,54 +1006,25 @@
   function renderSheetList() {
     revokeImageObjectUrls();
     saveStatusNode = null;
-    setPageTitle("商談シート一覧");
+    setPageTitle("開始");
     const page = el("section", { className: "page" });
-    appendChild(page, createPageHeading("ベクトルシート", "一回の商談を一枚のシートとして記録し、次回のお打ち合わせにつなげます。",
-      el("a", { className: "button", href: "#new", text: "＋ 新しい商談シートを作成" })
-    ));
+    appendChild(page, createPageHeading("ベクトルシート", "ブラウザには保存せず、必要な引き継ぎは実務者用CSVで行います。"));
 
-    const sheets = state.sheets.slice().sort(function (a, b) { return b.updatedAt.localeCompare(a.updatedAt); });
-    const list = el("div", { className: "sheet-list" });
-    if (!sheets.length) {
-      appendChild(list, el("div", { className: "panel empty-state empty-state-welcome" },
-        el("p", { className: "empty-state-kicker", text: "START A MEETING NOTE" }),
-        el("h2", { text: "最初の商談シートを作成しましょう" }),
-        el("p", { text: "お施主様名・商談日・商談回数を入力すると、すべての記録欄が空のシートを作成できます。" }),
-        el("a", { className: "button empty-state-action", href: "#new", text: "新しい商談シートを作成" }),
-        el("ol", { className: "empty-state-flow", attrs: { "aria-label": "商談記録の流れ" } },
-          el("li", {}, el("span", { text: "01" }), el("strong", { text: "入力・社内確認" })),
-          el("li", {}, el("span", { text: "02" }), el("strong", { text: "お客様確認" })),
-          el("li", {}, el("span", { text: "03" }), el("strong", { text: "PDF保存" }))
-        )
-      ));
-    }
-    sheets.forEach(function (sheet) {
-      const deleteButton = el("button", { className: "button button-danger-quiet button-small", type: "button", text: "削除" });
-      deleteButton.addEventListener("click", async function () {
-        if (!confirmAction(sheet.customerName + " 第" + sheet.meetingNumber + "回の商談シートを削除しますか？")) return;
-        deleteButton.disabled = true;
-        try {
-          await deleteSheet(sheet.sheetId);
-          showToast("商談シートと添付画像を削除しました。");
-          renderSheetList();
-        } catch (error) {
-          console.error("商談シートを削除できませんでした。", error);
-          deleteButton.disabled = false;
-          showToast("添付画像を削除できなかったため、商談シートは削除していません。", true);
-        }
-      });
-      appendChild(list, el("article", { className: "panel sheet-row" },
-        el("div", { className: "sheet-primary" }, el("strong", { text: sheet.customerName }), el("span", { text: sheet.title || "タイトル未設定" })),
-        sheetDatum("商談日", formatDate(sheet.meetingDate)),
-        sheetDatum("商談回数", "第" + sheet.meetingNumber + "回"),
-        sheetDatum("最終更新", formatDateTime(sheet.updatedAt)),
-        el("div", { className: "sheet-actions" },
-          el("a", { className: "button button-secondary button-small", href: "#sheet/" + sheet.sheetId + "/input", text: "開く" }),
-          deleteButton
-        )
-      ));
-    });
-    appendChild(page, list);
+    appendChild(page, el("div", { className: "panel empty-state empty-state-welcome" },
+      el("p", { className: "empty-state-kicker", text: "START A MEETING NOTE" }),
+      el("h2", { text: "新規入力、または実務者用CSVから開始します" }),
+      el("p", { text: "このシートの内容はブラウザに保存されません。後日編集する場合は、実務者用CSVを書き出して保管してください。" }),
+      el("div", { className: "start-actions" },
+        createNavButton("button empty-state-action", "新規入力", navigateToNewSheet),
+        createCsvImportControl("実務者用CSVを読み込む")
+      ),
+      createCsvSecurityNotice(),
+      el("ol", { className: "empty-state-flow", attrs: { "aria-label": "運用の流れ" } },
+        el("li", {}, el("span", { text: "01" }), el("strong", { text: "入力・確認" })),
+        el("li", {}, el("span", { text: "02" }), el("strong", { text: "PDF出力" })),
+        el("li", {}, el("span", { text: "03" }), el("strong", { text: "CSV保管" }))
+      )
+    ));
     app.replaceChildren(page);
   }
 
@@ -912,10 +1035,11 @@
   function renderNewSheetForm() {
     revokeImageObjectUrls();
     saveStatusNode = null;
-    setPageTitle("新しい商談シート");
+    setPageTitle("新規入力");
     const page = el("section", { className: "page page-narrow" });
-    appendChild(page, el("a", { className: "back-link", href: "#sheets", text: "← シート一覧へ戻る" }));
-    appendChild(page, createPageHeading("新しい商談シート", "基本情報を入力すると、7項目が空欄のシートを作成します。"));
+    appendChild(page, createNavButton("back-link nav-text-button", "← 開始画面へ戻る", navigateToStart));
+    appendChild(page, createPageHeading("新規入力", "基本情報を入力すると、項目が空欄のシートを作成します。"));
+    appendChild(page, createStorageNotice());
     const form = el("form", { className: "panel form-panel", attrs: { novalidate: "" } });
     const customer = makeField("お施主様名", "customerName", "text", "", { required: true, placeholder: "お施主様名を入力" });
     const date = makeField("商談日", "meetingDate", "date", todayIso(), { required: true });
@@ -926,7 +1050,7 @@
     const numberError = appendFieldError(number, "商談回数は1以上で入力してください。");
     appendChild(form, el("div", { className: "field-grid" }, customer.wrapper, date.wrapper, number.wrapper, title.wrapper));
     appendChild(form, el("div", { className: "form-actions" },
-      el("a", { className: "button button-secondary", href: "#sheets", text: "キャンセル" }),
+      createNavButton("button button-secondary", "開始画面へ戻る", navigateToStart),
       el("button", { className: "button", type: "submit", text: "空の商談シートを作成" })
     ));
     form.addEventListener("submit", function (event) {
@@ -949,7 +1073,7 @@
         title: title.input.value.trim()
       });
       showToast("新しい商談シートを作成しました。");
-      window.location.hash = "#sheet/" + sheet.sheetId + "/input";
+      navigateToSheet(sheet.sheetId, "input");
     });
     appendChild(page, form);
     app.replaceChildren(page);
@@ -961,27 +1085,13 @@
   // ---------------------------------------------------------------------------
 
   function createWorkspaceHeader(sheet, mode) {
-    saveStatusNode = el("span", { className: "save-status", text: "最終保存：" + formatDateTime(sheet.updatedAt) });
+    saveStatusNode = el("span", { className: "save-status", text: "ブラウザ保存なし：CSVを書き出して保管してください" });
     const actions = el("div", { className: "workspace-actions no-print" });
-    const saveButton = el("button", { className: "button button-secondary button-small", type: "button", text: "保存" });
-    saveButton.addEventListener("click", function () {
-      flushPendingSave();
-      saveAppData();
-      showToast("商談シートを保存しました。");
-    });
-    const nextButton = el("button", { className: "button button-secondary button-small", type: "button", text: "次回シートを作成" });
-    nextButton.addEventListener("click", function () {
-      if (!confirmAction("現在の項目名だけを引き継ぎ、本文が空欄の次回シートを作成しますか？")) return;
-      const next = createNextSheet(sheet.sheetId);
-      if (!next) return;
-      showToast("次回シートを作成しました。");
-      window.location.hash = "#sheet/" + next.sheetId + "/input";
-    });
-    appendChild(actions, saveButton);
+    if (mode === "input") appendChild(actions, createCsvImportControl("CSV読み込み"));
+    if (mode === "input" || mode === "internal") appendChild(actions, createCsvExportButton(sheet.sheetId, true));
     appendChild(actions, modeButton(sheet.sheetId, "input", "入力・社内確認", mode === "internal" ? "input" : mode));
     appendChild(actions, modeButton(sheet.sheetId, "customer", "お客様用で確認・出力", mode));
-    appendChild(actions, nextButton);
-    appendChild(actions, el("a", { className: "button button-quiet button-small", href: "#sheets", text: "シート一覧へ戻る" }));
+    appendChild(actions, createNavButton("button button-quiet button-small", "開始画面へ戻る", navigateToStart));
 
     return el("header", { className: "workspace-header" },
       el("div", { className: "workspace-title" },
@@ -1006,7 +1116,7 @@
     button.disabled = targetMode === currentMode;
     button.addEventListener("click", function () {
       flushPendingSave();
-      window.location.hash = "#sheet/" + sheetId + "/" + targetMode;
+      navigateToSheet(sheetId, targetMode);
     });
     return button;
   }
@@ -1020,7 +1130,17 @@
       )
     );
     const fields = CURRENT_STATUS_FIELDS.map(function (field) {
-      const formField = makeField(field.label, "currentStatus-" + field.key, "text", sheet.currentStatus[field.key], {});
+      const formField = makeField(field.label, "currentStatus-" + field.key, "text", sheet.currentStatus[field.key], field.money ? {
+        attrs: { inputmode: "decimal", pattern: "[0-9.]*" }
+      } : {});
+      if (field.money) {
+        formField.wrapper.classList.add("field-with-unit");
+        formField.input.addEventListener("blur", function () {
+          formField.input.value = normalizeMoneyInput(formField.input.value);
+          updateCurrentStatus(sheetId, field.key, formField.input.value);
+        });
+        appendChild(formField.wrapper, el("span", { className: "field-unit", text: field.unit }));
+      }
       formField.input.addEventListener("input", function () {
         updateCurrentStatus(sheetId, field.key, formField.input.value);
       });
@@ -1035,10 +1155,17 @@
     const sheet = getSheetById(sheetId);
     if (!sheet) return renderNotFound();
     state.activeSheetId = sheetId;
-    saveAppData();
     setPageTitle(sheet.customerName + "・入力モード");
     const page = el("section", { className: "page workspace-page" });
     appendChild(page, createWorkspaceHeader(sheet, "input"));
+    appendChild(page, createStorageNotice());
+    appendChild(page, el("section", { className: "panel csv-panel no-print" },
+      el("div", {}, el("h2", { text: "実務者用CSV" }), createCsvSecurityNotice()),
+      el("div", { className: "csv-actions" },
+        createCsvImportControl("実務者用CSVを読み込む"),
+        createCsvExportButton(sheetId)
+      )
+    ));
 
     const basicPanel = el("section", { className: "panel form-panel" },
       el("div", { className: "section-heading" },
@@ -1064,7 +1191,7 @@
 
     appendChild(page, el("div", { className: "input-group-heading" },
       el("div", {}, el("p", { className: "section-number", text: "03–06" }), el("h2", { text: "家づくりに関する主要4項目" })),
-      el("p", { text: "入力した文章は社内用の元記録として保存されます。" })
+      el("p", { text: "入力した文章は、このページを開いている間だけ保持されます。後日編集する場合はCSVを書き出してください。" })
     ));
     coreDefinitions.forEach(function (definition, index) {
       const editor = createNoteEditor({
@@ -1087,13 +1214,9 @@
     });
     appendChild(page, createStakeholderAddForm(sheetId));
     appendChild(page, el("div", { className: "bottom-actions no-print" },
-      el("button", { className: "button", type: "button", text: "保存", on: { click: function () {
-        flushPendingSave();
-        saveAppData();
-        showToast("商談シートを保存しました。");
-      } } }),
+      createCsvExportButton(sheetId),
       modeButton(sheetId, "customer", "お客様用で確認・出力", "input"),
-      el("a", { className: "button button-secondary", href: "#sheets", text: "シート一覧へ戻る" })
+      createNavButton("button button-secondary", "開始画面へ戻る", navigateToStart)
     ));
     app.replaceChildren(page);
   }
@@ -1152,7 +1275,7 @@
     fileInput.addEventListener("change", async function () {
       if (!fileInput.files || !fileInput.files.length) return;
       uploadLabel.classList.add("is-busy");
-      uploadLabel.textContent = "画像を保存中…";
+      uploadLabel.textContent = "画像を読み込み中…";
       const result = await addImagesToCategory(sheet.sheetId, definition.key, fileInput.files);
       if (result.added.length) showToast(result.added.length + "件の画像を追加しました。");
       if (result.errors.length) showToast(result.errors.join("　"), true);
@@ -1233,7 +1356,7 @@
         return {
           key: field.key,
           label: field.label,
-          value: String(status[field.key] || "").trim()
+          value: formatCurrentStatusValue(field.key, status[field.key])
         };
       })
       .filter(function (row) { return row.value !== ""; });
@@ -1255,6 +1378,54 @@
           )
         )
       )
+    );
+  }
+
+  function getCustomerTopPhotoAttachment(sheet) {
+    const attachments = getCustomerOutputAttachments(sheet);
+    if (!attachments.length) return null;
+    return attachments.find(function (attachment) { return attachment.categoryKey === "building"; }) || attachments[0];
+  }
+
+  function createCustomerTopPhotoArea(sheet) {
+    const attachment = getCustomerTopPhotoAttachment(sheet);
+    if (!attachment) return null;
+    const area = el("section", { className: "top-photo-area", attrs: { "aria-label": "参考写真" } },
+      el("div", { className: "top-photo-frame" },
+        el("span", { className: "top-photo-loading", text: "参考写真を読み込み中" })
+      )
+    );
+    activeImageRenderPromises.push(renderCustomerTopPhoto(sheet, attachment, area));
+    return area;
+  }
+
+  async function renderCustomerTopPhoto(sheet, attachment, area) {
+    const frame = area.querySelector(".top-photo-frame");
+    if (!frame) return;
+    try {
+      const objectUrl = await createImageObjectUrl(attachment.imageId);
+      if (!objectUrl) {
+        area.hidden = true;
+        return;
+      }
+      const image = el("img", {
+        className: "top-reference-photo",
+        attrs: { src: objectUrl, alt: attachment.caption || attachment.fileName || "参考写真" }
+      });
+      frame.replaceChildren(image);
+      if (typeof image.decode === "function") await image.decode().catch(function () {});
+    } catch (error) {
+      console.error("参考写真を表示できませんでした。", error);
+      area.hidden = true;
+    }
+  }
+
+  function createCustomerTopInfoRow(sheet, currentStatusArea) {
+    const photoArea = createCustomerTopPhotoArea(sheet);
+    if (!photoArea && !currentStatusArea) return null;
+    return el("div", { className: "top-info-row" },
+      photoArea || el("div", { className: "top-photo-area top-photo-area-empty", attrs: { "aria-hidden": "true" } }),
+      currentStatusArea || el("div", { className: "current-status-area current-status-area-empty", attrs: { "aria-hidden": "true" } })
     );
   }
 
@@ -1428,7 +1599,7 @@
   function createStakeholderAddForm(sheetId) {
     const form = el("form", { className: "panel add-stakeholder" });
     const field = makeField("追加する補足項目名", "stakeholderLabel", "text", "", { required: true, placeholder: "例：お子様、同居予定のご家族" });
-    appendChild(form, el("div", {}, el("p", { className: "section-number", text: "＋" }), el("h2", { text: "補足項目を追加" }), el("p", { className: "field-hint", text: "追加した項目は現在のシートだけに保存され、次回シートには項目名だけが引き継がれます。" })));
+    appendChild(form, el("div", {}, el("p", { className: "section-number", text: "＋" }), el("h2", { text: "補足項目を追加" }), el("p", { className: "field-hint", text: "追加した項目は、このページを開いている間だけ保持されます。必要な場合はCSVを書き出してください。" })));
     appendChild(form, el("div", { className: "add-stakeholder-row" }, field.wrapper, el("button", { className: "button", type: "submit", text: "補足項目を追加" })));
     form.addEventListener("submit", function (event) {
       event.preventDefault();
@@ -1451,10 +1622,10 @@
     const sheet = getSheetById(sheetId);
     if (!sheet) return renderNotFound();
     state.activeSheetId = sheetId;
-    saveAppData();
     setPageTitle(sheet.customerName + "・社内用振り返り");
     const page = el("section", { className: "page workspace-page" });
     appendChild(page, createWorkspaceHeader(sheet, "internal"));
+    appendChild(page, createStorageNotice());
     appendChild(page, el("section", { className: "panel review-intro" },
       el("div", {}, el("p", { className: "eyebrow", text: "INTERNAL REVIEW" }), el("h2", { text: "一回の商談内容を社内用に振り返る" }), el("p", { text: "主要項目と関係者ごとの補足を、入力欄ではなく読みやすい文章で一覧表示しています。" })),
       el("dl", { className: "basic-summary" },
@@ -1462,7 +1633,7 @@
         summaryPair("商談日", formatDate(sheet.meetingDate)),
         summaryPair("商談回数", "第" + sheet.meetingNumber + "回"),
         summaryPair("商談タイトル", sheet.title || "未入力"),
-        summaryPair("最終保存", formatDateTime(sheet.updatedAt))
+        summaryPair("最終更新", formatDateTime(sheet.updatedAt))
       )
     ));
     const reviewList = el("div", { className: "review-list" });
@@ -1478,6 +1649,7 @@
     });
     appendChild(page, reviewList);
     appendChild(page, el("div", { className: "bottom-actions no-print" },
+      createCsvExportButton(sheetId),
       modeButton(sheetId, "input", "入力モードへ戻る", "internal"),
       modeButton(sheetId, "customer", "お客様用で確認", "internal")
     ));
@@ -1509,7 +1681,6 @@
     if (!sheet) return renderNotFound();
     state.activeSheetId = sheetId;
     initializeCustomerPreview(sheetId);
-    saveAppData();
     setPageTitle(sheet.customerName + "・お客様用プレビュー");
     const page = el("section", { className: "page workspace-page customer-mode-page" });
     appendChild(page, createWorkspaceHeader(sheet, "customer"));
@@ -1565,15 +1736,16 @@
     }
     const textDocument = createCustomerDocumentPage("customer-text-page customer-document-text", true, true, "お客様用資料プレビュー 1ページ目", "前回のお打ち合わせ内容");
     const currentStatusArea = createCustomerCurrentStatusArea(sheet);
-    const customerDocumentSections = el("div", { className: "customer-output-body" + (currentStatusArea ? " has-current-status" : "") });
-    if (currentStatusArea) appendChild(customerDocumentSections, currentStatusArea);
+    const topInfoRow = createCustomerTopInfoRow(sheet, currentStatusArea);
+    const customerDocumentSections = el("div", { className: "customer-output-body" + (topInfoRow ? " has-top-info" : "") });
+    if (topInfoRow) appendChild(customerDocumentSections, topInfoRow);
     const customerLowerGrid = el("div", { className: "customer-lower-grid" });
     const customerRightStack = el("div", { className: "customer-right-stack" });
     const previewEmpty = el("div", { className: "customer-preview-empty no-print" },
       el("p", { className: "empty-state-kicker", text: "NO OUTPUT CONTENT" }),
       el("h2", { text: "お客様用に表示できる内容がまだ入力されていません" }),
       el("p", { text: "入力モードで主要4項目を入力すると、このプレビューに自動反映されます。" }),
-      el("a", { className: "button", href: "#sheet/" + sheetId + "/input", text: "入力モードへ戻る" })
+      createNavButton("button", "入力モードへ戻る", function () { navigateToSheet(sheetId, "input"); })
     );
     let printButton = null;
     function hasVisiblePreviewContent() {
@@ -1588,9 +1760,10 @@
     }
     function updatePreviewEmptyState() {
       const hasCurrentStatus = getCurrentStatusRows(sheet).length > 0;
-      const isEmpty = !hasAnyPreviewContent() && !hasCurrentStatus;
+      const hasTopPhoto = Boolean(getCustomerTopPhotoAttachment(sheet));
+      const isEmpty = !hasAnyPreviewContent() && !hasCurrentStatus && !hasTopPhoto;
       previewEmpty.hidden = !isEmpty;
-      if (printButton) printButton.disabled = !hasVisiblePreviewContent() && !hasCurrentStatus;
+      if (printButton) printButton.disabled = !hasVisiblePreviewContent() && !hasCurrentStatus && !hasTopPhoto;
     }
 
     coreDefinitions.forEach(function (definition, index) {
@@ -1699,8 +1872,8 @@
     app.replaceChildren(el("section", { className: "page page-narrow" },
       el("div", { className: "panel empty-state" },
         el("h1", { text: "商談シートが見つかりません" }),
-        el("p", { text: "削除されたか、URLが正しくない可能性があります。" }),
-        el("a", { className: "button", href: "#sheets", text: "シート一覧へ戻る" })
+        el("p", { text: "現在の入力内容が破棄されたか、表示対象が見つかりません。" }),
+        createNavButton("button", "開始画面へ戻る", navigateToStart)
       )
     ));
   }
@@ -1708,56 +1881,41 @@
   function renderApp() {
     window.scrollTo(0, 0);
     window.requestAnimationFrame(updateBackToTopVisibility);
-    const path = (window.location.hash || "").replace(/^#/, "");
-    const parts = path.split("/").filter(Boolean);
-    if (!parts.length) {
-      const active = getActiveSheet();
-      window.location.hash = active ? "#sheet/" + active.sheetId + "/input" : "#sheets";
-      return;
+    if (currentView.name === "new") return renderNewSheetForm();
+    if (currentView.name === "sheet" && currentView.sheetId) {
+      if (currentView.mode === "customer") return renderCustomerPreviewMode(currentView.sheetId);
+      return renderInputMode(currentView.sheetId);
     }
-    if (parts[0] === "sheets") return renderSheetList();
-    if (parts[0] === "new") return renderNewSheetForm();
-    if (parts[0] === "sheet" && parts[1]) {
-      const mode = parts[2] || "input";
-      if (mode === "input") return renderInputMode(parts[1]);
-      if (mode === "internal") {
-        window.location.hash = "#sheet/" + parts[1] + "/input";
-        return;
-      }
-      if (mode === "customer") return renderCustomerPreviewMode(parts[1]);
-    }
-    return renderNotFound();
+    return renderSheetList();
   }
 
   document.getElementById("clear-data").addEventListener("click", async function () {
-    if (!confirmAction("このブラウザに保存した商談シートと添付画像をすべて削除しますか？この操作は取り消せません。")) return;
+    if (!confirmAction("現在の入力内容を破棄しますか？CSVを書き出していない内容は失われます。")) return;
     window.clearTimeout(pendingSaveTimer);
     pendingSaveTimer = null;
     try {
       await clearLocalData();
-      showToast("このブラウザに保存した商談シートと添付画像を削除しました。");
-      window.location.hash = "#sheets";
-      renderApp();
+      showToast("現在の入力内容を破棄しました。");
+      navigateToStart();
     } catch (error) {
-      console.error("保存データを削除できませんでした。", error);
-      showToast("画像データを削除できませんでした。もう一度お試しください。", true);
+      console.error("入力内容を破棄できませんでした。", error);
+      showToast("入力内容を破棄できませんでした。もう一度お試しください。", true);
     }
   });
 
-  window.addEventListener("hashchange", function () {
-    flushPendingSave();
-    renderApp();
+  ["brand-start", "nav-start"].forEach(function (id) {
+    const button = document.getElementById(id);
+    if (button) button.addEventListener("click", navigateToStart);
   });
+
   window.addEventListener("scroll", updateBackToTopVisibility, { passive: true });
   if (backToTopButton) backToTopButton.addEventListener("click", scrollToPageTop);
-  window.addEventListener("beforeunload", flushPendingSave);
-  openImageDatabase()
-    .catch(function (error) {
-      console.error("画像保存機能を準備できませんでした。", error);
-      showToast("画像保存機能を初期化できませんでした。文章機能は利用できます。", true);
-    })
-    .finally(function () {
-      renderApp();
-      updateBackToTopVisibility();
-    });
+  clearImageMemoryStore().finally(function () {
+    openImageMemoryStore()
+      .finally(function () {
+        renderApp();
+        updateBackToTopVisibility();
+      });
+  });
 })();
+

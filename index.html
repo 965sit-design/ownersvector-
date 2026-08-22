@@ -9,13 +9,13 @@
   </head>
   <body>
     <header class="app-header no-print">
-      <a class="brand" href="#sheets" aria-label="商談シート一覧へ戻る">
+      <button type="button" class="brand" id="brand-start" aria-label="開始画面へ戻る">
         <span class="brand-logo-crop">
           <img class="brand-logo" src="logo_clr.png" alt="NEST HOUSE">
         </span>
-      </a>
+      </button>
       <nav aria-label="メインナビゲーション">
-        <a href="#sheets">商談シート一覧</a>
+        <button type="button" id="nav-start">開始画面</button>
       </nav>
     </header>
 
@@ -23,11 +23,11 @@
 
     <footer class="app-footer no-print">
       <div>
-        <strong>ブラウザ内保存</strong>
-        <span>入力内容と添付画像はこのブラウザ内に保存され、別の端末には共有されません。</span>
+        <strong>ブラウザ保存なし</strong>
+        <span>入力内容はページを閉じると消えます。後日編集する場合は実務者用CSVを書き出してください。</span>
       </div>
       <div class="footer-actions">
-        <button type="button" class="button button-danger-quiet" id="clear-data">すべてのデータを削除</button>
+        <button type="button" class="button button-danger-quiet" id="clear-data">現在の入力内容を破棄</button>
       </div>
     </footer>
 
