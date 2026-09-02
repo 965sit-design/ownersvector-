@@ -130,9 +130,19 @@
     return MONEY_STATUS_KEYS.has(key) ? normalized + "万円" : normalized;
   }
 
+  function normalizeCustomerName(value) {
+    const trimmed = String(value || "").trim();
+    const base = trimmed.replace(/様+$/u, "").trim();
+    return base ? base + "様" : "";
+  }
+
+  function getDisplayCustomerName(sheet) {
+    return normalizeCustomerName(sheet && sheet.customerName);
+  }
+
   function normalizeSheet(source) {
     const sheet = Object.assign({}, source);
-    sheet.customerName = String(sheet.customerName || "");
+    sheet.customerName = normalizeCustomerName(sheet.customerName);
     sheet.meetingDate = String(sheet.meetingDate || "");
     sheet.meetingNumber = Number(sheet.meetingNumber || 1);
     sheet.title = String(sheet.title || "");
@@ -213,7 +223,7 @@
     const now = new Date().toISOString();
     const sheet = {
       sheetId: generateUniqueId("S"),
-      customerName: String(data.customerName || ""),
+      customerName: normalizeCustomerName(data.customerName),
       meetingDate: String(data.meetingDate || todayIso()),
       meetingNumber: Number(data.meetingNumber || 1),
       title: String(data.title || ""),
@@ -234,7 +244,11 @@
   function updateSheet(sheetId, data) {
     const sheet = getSheetById(sheetId);
     if (!sheet) return null;
-    Object.assign(sheet, data);
+    const normalizedData = Object.assign({}, data);
+    if (Object.prototype.hasOwnProperty.call(normalizedData, "customerName")) {
+      normalizedData.customerName = normalizeCustomerName(normalizedData.customerName);
+    }
+    Object.assign(sheet, normalizedData);
     scheduleSave(sheet);
     return sheet;
   }
@@ -734,7 +748,7 @@
 
   function getCsvValue(sheet, key) {
     if (key === "sheetId") return sheet.sheetId;
-    if (key === "customerName") return sheet.customerName;
+    if (key === "customerName") return getDisplayCustomerName(sheet);
     if (key === "meetingDate") return sheet.meetingDate;
     if (key === "meetingNumber") return String(sheet.meetingNumber || 1);
     if (key === "title") return sheet.title;
@@ -763,7 +777,7 @@
   }
 
   function createCsvFileName(sheet) {
-    return "ベクトルシート_" + safeFileNamePart(sheet.customerName, "お客様名未設定") + "_" + safeFileNamePart(sheet.meetingDate, todayIso()) + ".csv";
+    return "ベクトルシート_" + safeFileNamePart(getDisplayCustomerName(sheet), "お客様名未設定") + "_" + safeFileNamePart(sheet.meetingDate, todayIso()) + ".csv";
   }
 
   function downloadTextFile(fileName, text, type) {
@@ -828,7 +842,7 @@
     const now = new Date().toISOString();
     const sheet = {
       sheetId: String(record.sheetId || generateUniqueId("S")),
-      customerName: String(record.customerName || ""),
+      customerName: normalizeCustomerName(record.customerName),
       meetingDate: String(record.meetingDate || todayIso()),
       meetingNumber: Math.max(1, Number(record.meetingNumber || 1)),
       title: String(record.title || ""),
@@ -1041,7 +1055,7 @@
     appendChild(page, createPageHeading("新規入力", "基本情報を入力すると、項目が空欄のシートを作成します。"));
     appendChild(page, createStorageNotice());
     const form = el("form", { className: "panel form-panel", attrs: { novalidate: "" } });
-    const customer = makeField("お施主様名", "customerName", "text", "", { required: true, placeholder: "お施主様名を入力" });
+    const customer = makeField("お施主様名", "customerName", "text", "様", { required: true, placeholder: "お施主様名を入力" });
     const date = makeField("商談日", "meetingDate", "date", todayIso(), { required: true });
     const number = makeField("商談回数", "meetingNumber", "number", 1, { required: true, min: 1 });
     const title = makeField("商談タイトル（任意）", "title", "text", "", { placeholder: "今回の打ち合わせ内容を入力" });
@@ -1055,7 +1069,8 @@
     ));
     form.addEventListener("submit", function (event) {
       event.preventDefault();
-      const validCustomer = Boolean(customer.input.value.trim());
+      const normalizedCustomerName = normalizeCustomerName(customer.input.value);
+      const validCustomer = Boolean(normalizedCustomerName);
       const validDate = Boolean(date.input.value);
       const validNumber = Number(number.input.value) >= 1;
       customerError.hidden = validCustomer;
@@ -1067,7 +1082,7 @@
         return;
       }
       const sheet = createBlankSheet({
-        customerName: customer.input.value.trim(),
+        customerName: normalizedCustomerName,
         meetingDate: date.input.value,
         meetingNumber: Number(number.input.value),
         title: title.input.value.trim()
@@ -1078,6 +1093,7 @@
     appendChild(page, form);
     app.replaceChildren(page);
     customer.input.focus();
+    customer.input.setSelectionRange(0, 0);
   }
 
   // ---------------------------------------------------------------------------
@@ -1098,7 +1114,7 @@
         el("div", { className: "mode-line" },
           el("span", { className: "mode-badge", text: modeLabel(mode) })
         ),
-        el("h1", { text: sheet.customerName + "　第" + sheet.meetingNumber + "回" }),
+        el("h1", { text: getDisplayCustomerName(sheet) + "　第" + sheet.meetingNumber + "回" }),
         el("p", { text: formatDate(sheet.meetingDate) + "　｜　" + (sheet.title || "タイトル未設定") }),
         saveStatusNode
       ),
@@ -1155,7 +1171,7 @@
     const sheet = getSheetById(sheetId);
     if (!sheet) return renderNotFound();
     state.activeSheetId = sheetId;
-    setPageTitle(sheet.customerName + "・入力モード");
+    setPageTitle(getDisplayCustomerName(sheet) + "・入力モード");
     const page = el("section", { className: "page workspace-page" });
     appendChild(page, createWorkspaceHeader(sheet, "input"));
     appendChild(page, createStorageNotice());
@@ -1173,17 +1189,20 @@
         el("span", { className: "field-hint", text: "変更はこのシートだけに反映されます" })
       )
     );
-    const customer = makeField("お施主様名", "customerName", "text", sheet.customerName, { required: true });
+    const customer = makeField("お施主様名", "customerName", "text", getDisplayCustomerName(sheet) || "様", { required: true });
     const date = makeField("商談日", "meetingDate", "date", sheet.meetingDate, { required: true });
     const number = makeField("商談回数", "meetingNumber", "number", sheet.meetingNumber, { required: true, min: 1 });
     const title = makeField("商談タイトル（任意）", "title", "text", sheet.title, { placeholder: "今回の打ち合わせ内容を入力" });
     [
-      [customer.input, "customerName", function (value) { return value; }],
+      [customer.input, "customerName", normalizeCustomerName],
       [date.input, "meetingDate", function (value) { return value; }],
       [number.input, "meetingNumber", function (value) { return Math.max(1, Number(value || 1)); }],
       [title.input, "title", function (value) { return value; }]
     ].forEach(function (entry) {
       entry[0].addEventListener("input", function () { updateSheet(sheetId, { [entry[1]]: entry[2](entry[0].value) }); });
+    });
+    customer.input.addEventListener("blur", function () {
+      customer.input.value = getDisplayCustomerName(sheet) || "様";
     });
     appendChild(basicPanel, el("div", { className: "field-grid four-fields" }, customer.wrapper, date.wrapper, number.wrapper, title.wrapper));
     appendChild(page, basicPanel);
@@ -1201,13 +1220,13 @@
         content: sheet.coreNotes[definition.key].content,
         onInput: function (content) { updateCoreNote(sheetId, definition.key, content); }
       });
-      appendChild(editor, createImageManager(sheet, definition));
       appendChild(page, editor);
     });
+    appendChild(page, createImageManager(sheet));
 
     appendChild(page, el("div", { className: "input-group-heading stakeholder-heading" },
       el("div", {}, el("p", { className: "section-number", text: "07–" }), el("h2", { text: "関係者ごとの補足" })),
-      el("p", { text: "この内容は社内用表示だけに含まれ、お客様用資料には表示されません。" })
+      el("p", { text: "ご主人様・奥様の内容は、お客様用資料の「ご家族の考え方とご希望」に表示されます。ご両親・追加項目は社内用のみです。" })
     ));
     sheet.stakeholderNotes.forEach(function (stakeholder, index) {
       appendChild(page, createStakeholderEditor(sheet, stakeholder, index + 7));
@@ -1255,40 +1274,70 @@
     );
   }
 
-  function createImageManager(sheet, definition) {
-    const inputId = "image-upload-" + definition.key;
+  function createImageManager(sheet) {
+    const inputId = "image-upload-main-" + sheet.sheetId;
     const fileInput = el("input", {
       id: inputId,
       type: "file",
       attrs: { accept: "image/jpeg,image/png,image/webp", multiple: "" }
     });
+    const categorySelect = el("select", { className: "image-category-select", attrs: { "aria-label": "画像の紐づけ先" } },
+      coreDefinitions.map(function (definition) {
+        return el("option", { value: definition.key, text: definition.label });
+      })
+    );
+    categorySelect.value = coreDefinitions.some(function (definition) { return definition.key === "building"; }) ? "building" : coreDefinitions[0].key;
     const uploadLabel = el("label", {
       className: "button button-secondary image-upload-button",
-      text: definition.key === "building" ? "＋ 建物の参考画像を追加" : "＋ 画像を追加",
+      text: "＋ 画像を追加",
       attrs: { for: inputId }
     });
     const message = el("p", { className: "image-upload-hint", text: "JPEG・PNG・WebP／1ファイル10MB以下／複数選択可" });
-    const gallery = el("div", { className: "image-gallery image-gallery-input" });
-    const renderPromise = renderCategoryImages(sheet.sheetId, definition.key, "input", gallery);
-    activeImageRenderPromises.push(renderPromise);
+    const imageGroups = el("div", { className: "image-manager-groups" });
+    let hasImages = false;
+    coreDefinitions.forEach(function (definition) {
+      const gallery = el("div", { className: "image-gallery image-gallery-input" });
+      const attachments = sheet.attachments
+        .filter(function (attachment) { return attachment.categoryKey === definition.key; });
+      if (attachments.length) hasImages = true;
+      const renderPromise = renderCategoryImages(sheet.sheetId, definition.key, "input", gallery);
+      activeImageRenderPromises.push(renderPromise);
+      appendChild(imageGroups, el("section", {
+        className: "image-manager-group",
+        attrs: attachments.length ? {} : { hidden: "" }
+      },
+        el("h4", { text: definition.label }),
+        gallery
+      ));
+    });
+    const emptyMessage = el("p", {
+      className: "image-empty-message",
+      text: "まだ画像はありません。紐づけ先を選んで画像を追加してください。",
+      attrs: hasImages ? { hidden: "" } : {}
+    });
 
     fileInput.addEventListener("change", async function () {
       if (!fileInput.files || !fileInput.files.length) return;
       uploadLabel.classList.add("is-busy");
       uploadLabel.textContent = "画像を読み込み中…";
-      const result = await addImagesToCategory(sheet.sheetId, definition.key, fileInput.files);
+      const result = await addImagesToCategory(sheet.sheetId, categorySelect.value, fileInput.files);
       if (result.added.length) showToast(result.added.length + "件の画像を追加しました。");
       if (result.errors.length) showToast(result.errors.join("　"), true);
       fileInput.value = "";
       renderInputMode(sheet.sheetId);
     });
 
-    return el("div", { className: "image-manager" + (definition.key === "building" ? " is-building" : "") },
+    return el("section", { className: "panel image-manager image-manager-unified" },
       el("div", { className: "image-manager-head" },
         el("div", {}, el("h3", { text: "添付画像" }), message),
-        el("div", {}, fileInput, uploadLabel)
+        el("div", { className: "image-upload-controls" },
+          el("label", { className: "image-category-label" }, el("span", { text: "紐づけ先" }), categorySelect),
+          fileInput,
+          uploadLabel
+        )
       ),
-      gallery
+      emptyMessage,
+      imageGroups
     );
   }
 
@@ -1426,6 +1475,32 @@
     return el("div", { className: "top-info-row" },
       photoArea || el("div", { className: "top-photo-area top-photo-area-empty", attrs: { "aria-hidden": "true" } }),
       currentStatusArea || el("div", { className: "current-status-area current-status-area-empty", attrs: { "aria-hidden": "true" } })
+    );
+  }
+
+  function getCustomerFamilyThoughtItems(sheet) {
+    return [
+      { key: "husband", label: "ご主人様", content: getStakeholderContent(sheet, "husband") },
+      { key: "wife", label: "奥様", content: getStakeholderContent(sheet, "wife") }
+    ].filter(function (item) { return hasText(item.content); });
+  }
+
+  function createCustomerFamilyThoughtSection(sheet) {
+    const items = getCustomerFamilyThoughtItems(sheet);
+    if (!items.length) return null;
+    return el("section", { className: "family-thought-section", attrs: { "aria-label": "ご家族の考え方とご希望" } },
+      el("h2", { className: "family-thought-title", text: "ご家族の考え方とご希望" }),
+      el("div", {
+        className: "family-thought-columns",
+        attrs: { "data-count": String(items.length) }
+      },
+        items.map(function (item) {
+          return el("section", { className: "family-thought-column family-thought-" + item.key },
+            el("h3", { className: "family-thought-person", text: item.label }),
+            el("p", { className: "family-thought-body", text: item.content })
+          );
+        })
+      )
     );
   }
 
@@ -1622,14 +1697,14 @@
     const sheet = getSheetById(sheetId);
     if (!sheet) return renderNotFound();
     state.activeSheetId = sheetId;
-    setPageTitle(sheet.customerName + "・社内用振り返り");
+    setPageTitle(getDisplayCustomerName(sheet) + "・社内用振り返り");
     const page = el("section", { className: "page workspace-page" });
     appendChild(page, createWorkspaceHeader(sheet, "internal"));
     appendChild(page, createStorageNotice());
     appendChild(page, el("section", { className: "panel review-intro" },
       el("div", {}, el("p", { className: "eyebrow", text: "INTERNAL REVIEW" }), el("h2", { text: "一回の商談内容を社内用に振り返る" }), el("p", { text: "主要項目と関係者ごとの補足を、入力欄ではなく読みやすい文章で一覧表示しています。" })),
       el("dl", { className: "basic-summary" },
-        summaryPair("お施主様名", sheet.customerName),
+        summaryPair("お施主様名", getDisplayCustomerName(sheet)),
         summaryPair("商談日", formatDate(sheet.meetingDate)),
         summaryPair("商談回数", "第" + sheet.meetingNumber + "回"),
         summaryPair("商談タイトル", sheet.title || "未入力"),
@@ -1681,37 +1756,38 @@
     if (!sheet) return renderNotFound();
     state.activeSheetId = sheetId;
     initializeCustomerPreview(sheetId);
-    setPageTitle(sheet.customerName + "・お客様用プレビュー");
+    setPageTitle(getDisplayCustomerName(sheet) + "・お客様用プレビュー");
     const page = el("section", { className: "page workspace-page customer-mode-page" });
     appendChild(page, createWorkspaceHeader(sheet, "customer"));
 
     const controls = el("aside", { className: "panel preview-controls no-print" },
-      el("div", {}, el("p", { className: "eyebrow", text: "OUTPUT SETTINGS" }), el("h2", { text: "表示する項目" }), el("p", { text: "チェックした4項目だけをPDFに出力します。文章の編集は元の社内記録を変更しません。" }))
+      el("div", {}, el("p", { className: "eyebrow", text: "OUTPUT SETTINGS" }), el("h2", { text: "表示する項目" }), el("p", { text: "チェックした4項目をPDFに出力します。ご主人様・奥様欄は入力があれば自動表示されます。文章の編集は元の社内記録を変更しません。" }))
     );
-    function createCustomerPrintBrand() {
-      return el("div", { className: "customer-print-brand" },
-        el("span", { className: "customer-print-logo-crop" },
-          el("img", { className: "customer-print-logo", attrs: { src: "logo_clr.png", alt: "NEST HOUSE" } })
+    function createCustomerPdfMeta() {
+      return el("div", { className: "customer-pdf-meta" },
+        el("span", { className: "customer-pdf-meta-item" },
+          el("span", { className: "customer-pdf-meta-label", text: "お客様名" }),
+          el("span", { className: "customer-pdf-meta-value", text: getDisplayCustomerName(sheet) })
         ),
-        el("p", { text: 'Make your everyday life a fun "always"' }),
-        el("p", { text: "いつもの毎日を楽しい“いつも”に" })
+        el("span", { className: "meta-divider", text: "|" }),
+        el("span", { className: "customer-pdf-meta-item" },
+          el("span", { className: "customer-pdf-meta-label", text: "前回のお打ち合わせ日" }),
+          el("span", { className: "customer-pdf-meta-value", text: formatDate(sheet.meetingDate) })
+        )
+      );
+    }
+    function createCustomerPdfLogo() {
+      return el("div", { className: "customer-pdf-logo-wrap" },
+        el("span", { className: "customer-pdf-logo-crop" },
+          el("img", { className: "customer-pdf-logo", attrs: { src: "logo_clr.png", alt: "NEST HOUSE" } })
+        )
       );
     }
     function createCustomerDocumentHeader(includeMeta, includeTitle, titleText, subtitleText) {
-      return el("header", { className: "customer-document-header" },
-        includeTitle ? el("div", { className: "customer-document-title-block" },
-          el("p", { className: "document-kicker", text: "MEETING SHEET" }),
-          el("h1", { text: titleText || "前回のお打ち合わせ内容" }),
-          subtitleText ? el("p", { className: "customer-document-subtitle", text: subtitleText }) : null
-        ) : el("div", { className: "customer-document-title-block customer-document-title-spacer", attrs: { "aria-hidden": "true" } }),
-        createCustomerPrintBrand(),
-        includeMeta ? el("dl", { className: "document-meta" },
-          summaryPair("お客様名", sheet.customerName),
-          summaryPair("前回のお打ち合わせ日", formatDate(sheet.meetingDate)),
-          summaryPair("商談回数", "第" + sheet.meetingNumber + "回"),
-          summaryPair("商談タイトル", sheet.title || "—"),
-          summaryPair("出力日", formatDate(todayIso()))
-        ) : null
+      return el("header", { className: "customer-document-header customer-pdf-header" },
+        includeMeta ? createCustomerPdfMeta() : null,
+        createCustomerPdfLogo(),
+        el("div", { className: "customer-pdf-rule", attrs: { "aria-hidden": "true" } })
       );
     }
     function createCustomerDocumentPage(className, includeMeta, includeTitle, label, titleText, subtitleText) {
@@ -1734,11 +1810,13 @@
       textarea.style.height = "auto";
       textarea.style.height = Math.max(textarea.scrollHeight, 150) + "px";
     }
-    const textDocument = createCustomerDocumentPage("customer-text-page customer-document-text", true, true, "お客様用資料プレビュー 1ページ目", "前回のお打ち合わせ内容");
+    const textDocument = createCustomerDocumentPage("customer-text-page customer-document-text", true, true, "お客様用資料プレビュー 1ページ目");
     const currentStatusArea = createCustomerCurrentStatusArea(sheet);
     const topInfoRow = createCustomerTopInfoRow(sheet, currentStatusArea);
-    const customerDocumentSections = el("div", { className: "customer-output-body" + (topInfoRow ? " has-top-info" : "") });
+    const familyThoughtSection = createCustomerFamilyThoughtSection(sheet);
+    const customerDocumentSections = el("div", { className: "customer-output-body" + (topInfoRow ? " has-top-info" : "") + (familyThoughtSection ? " has-family-info" : "") });
     if (topInfoRow) appendChild(customerDocumentSections, topInfoRow);
+    if (familyThoughtSection) appendChild(customerDocumentSections, familyThoughtSection);
     const customerLowerGrid = el("div", { className: "customer-lower-grid" });
     const customerRightStack = el("div", { className: "customer-right-stack" });
     const previewEmpty = el("div", { className: "customer-preview-empty no-print" },
@@ -1761,9 +1839,10 @@
     function updatePreviewEmptyState() {
       const hasCurrentStatus = getCurrentStatusRows(sheet).length > 0;
       const hasTopPhoto = Boolean(getCustomerTopPhotoAttachment(sheet));
-      const isEmpty = !hasAnyPreviewContent() && !hasCurrentStatus && !hasTopPhoto;
+      const hasFamilyThoughts = getCustomerFamilyThoughtItems(sheet).length > 0;
+      const isEmpty = !hasAnyPreviewContent() && !hasCurrentStatus && !hasTopPhoto && !hasFamilyThoughts;
       previewEmpty.hidden = !isEmpty;
-      if (printButton) printButton.disabled = !hasVisiblePreviewContent() && !hasCurrentStatus && !hasTopPhoto;
+      if (printButton) printButton.disabled = !hasVisiblePreviewContent() && !hasCurrentStatus && !hasTopPhoto && !hasFamilyThoughts;
     }
 
     coreDefinitions.forEach(function (definition, index) {
