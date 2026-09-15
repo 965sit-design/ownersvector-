@@ -42,6 +42,16 @@
     { key: "annualIncome", label: "ご年収", unit: "万円", money: true },
     { key: "desiredArea", label: "住みたい場所" }
   ];
+  const DEFAULT_STAKEHOLDER_VISIBILITY = {
+    husband: true,
+    wife: true,
+    parents: false
+  };
+  const STAKEHOLDER_SHOW_COLUMNS = {
+    wife: "showWife",
+    husband: "showHusband",
+    parents: "showParents"
+  };
   const MONEY_STATUS_KEYS = new Set(CURRENT_STATUS_FIELDS.filter(function (field) { return field.money; }).map(function (field) { return field.key; }));
   const CSV_COLUMNS = [
     "sheetId",
@@ -60,7 +70,11 @@
     "land",
     "wife",
     "husband",
-    "parents"
+    "parents",
+    "showWife",
+    "showHusband",
+    "showParents",
+    "customStakeholders"
   ];
 
   let state = loadAppData();
@@ -136,6 +150,22 @@
     return base ? base + "様" : "";
   }
 
+  function getDefaultStakeholderVisibility(key, type) {
+    if (Object.prototype.hasOwnProperty.call(DEFAULT_STAKEHOLDER_VISIBILITY, key)) {
+      return DEFAULT_STAKEHOLDER_VISIBILITY[key];
+    }
+    return false;
+  }
+
+  function normalizeStakeholderVisibility(value, fallback) {
+    if (value === undefined || value === null || value === "") return Boolean(fallback);
+    if (typeof value === "boolean") return value;
+    const normalized = String(value).trim().toLowerCase();
+    if (["true", "1", "yes", "y", "on", "表示", "表示する"].includes(normalized)) return true;
+    if (["false", "0", "no", "n", "off", "非表示", "表示しない"].includes(normalized)) return false;
+    return Boolean(fallback);
+  }
+
   function getDisplayCustomerName(sheet) {
     return normalizeCustomerName(sheet && sheet.customerName);
   }
@@ -163,20 +193,27 @@
         key: key,
         label: key === "wife" ? "奥様" : key === "husband" ? "ご主人様" : "ご両親",
         content: "",
-        deletable: false
+        deletable: false,
+        showInCustomerOutput: getDefaultStakeholderVisibility(key, "default")
       });
     });
     sourceStakeholders.filter(function (item) { return !["wife", "husband", "parents"].includes(item.key); }).forEach(function (item) {
       ordered.push(item);
     });
     sheet.stakeholderNotes = ordered.map(function (item) {
+      const type = item.type === "custom" ? "custom" : "default";
+      const key = String(item.key);
       return {
         id: String(item.id),
-        type: item.type === "custom" ? "custom" : "default",
-        key: String(item.key),
+        type: type,
+        key: key,
         label: String(item.label || "補足項目"),
         content: String(item.content || ""),
-        deletable: item.type === "custom" || item.deletable === true
+        deletable: type === "custom" || item.deletable === true,
+        showInCustomerOutput: normalizeStakeholderVisibility(
+          item.showInCustomerOutput,
+          getDefaultStakeholderVisibility(key, type)
+        )
       };
     });
 
@@ -305,11 +342,26 @@
     scheduleSave(stakeholder.sheet);
   }
 
-  function addStakeholderNote(sheetId, label) {
+  function updateStakeholderCustomerOutputVisibility(sheetId, stakeholderId, visible) {
+    const stakeholder = findStakeholder(sheetId, stakeholderId);
+    if (!stakeholder) return;
+    stakeholder.item.showInCustomerOutput = Boolean(visible);
+    scheduleSave(stakeholder.sheet);
+  }
+
+  function addStakeholderNote(sheetId, label, showInCustomerOutput) {
     const sheet = getSheetById(sheetId);
     if (!sheet) return null;
     const id = generateUniqueId("ST");
-    const item = { id: id, type: "custom", key: "custom_" + id, label: label, content: "", deletable: true };
+    const item = {
+      id: id,
+      type: "custom",
+      key: "custom_" + id,
+      label: label,
+      content: "",
+      deletable: true,
+      showInCustomerOutput: normalizeStakeholderVisibility(showInCustomerOutput, false)
+    };
     sheet.stakeholderNotes.push(item);
     scheduleSave(sheet);
     return item;
@@ -390,9 +442,7 @@
   }
 
   function getAutomaticCustomerPreviewCategories(sheet) {
-    return coreDefinitions
-      .map(function (definition) { return definition.key; })
-      .filter(function (key) { return hasText(getCustomerPreviewContentFromSheet(sheet, key)); });
+    return coreDefinitions.map(function (definition) { return definition.key; });
   }
 
   function syncAutomaticCustomerPreviewVisibility(sheet) {
@@ -578,9 +628,9 @@
 
   function createDefaultStakeholders() {
     return [
-      { id: generateUniqueId("ST"), type: "default", key: "wife", label: "奥様", content: "", deletable: false },
-      { id: generateUniqueId("ST"), type: "default", key: "husband", label: "ご主人様", content: "", deletable: false },
-      { id: generateUniqueId("ST"), type: "default", key: "parents", label: "ご両親", content: "", deletable: false }
+      { id: generateUniqueId("ST"), type: "default", key: "wife", label: "奥様", content: "", deletable: false, showInCustomerOutput: true },
+      { id: generateUniqueId("ST"), type: "default", key: "husband", label: "ご主人様", content: "", deletable: false, showInCustomerOutput: true },
+      { id: generateUniqueId("ST"), type: "default", key: "parents", label: "ご両親", content: "", deletable: false, showInCustomerOutput: false }
     ];
   }
 
@@ -636,6 +686,7 @@
     updateCurrentStatus: updateCurrentStatus,
     updateStakeholderNote: updateStakeholderNote,
     updateStakeholderLabel: updateStakeholderLabel,
+    updateStakeholderCustomerOutputVisibility: updateStakeholderCustomerOutputVisibility,
     addStakeholderNote: addStakeholderNote,
     deleteStakeholderNote: deleteStakeholderNote,
     initializeCustomerPreview: initializeCustomerPreview,
@@ -742,8 +793,33 @@
   }
 
   function getStakeholderContent(sheet, key) {
-    const stakeholder = sheet.stakeholderNotes.find(function (item) { return item.key === key; });
+    const stakeholder = getStakeholderByKey(sheet, key);
     return stakeholder ? stakeholder.content : "";
+  }
+
+  function getStakeholderByKey(sheet, key) {
+    if (!sheet || !Array.isArray(sheet.stakeholderNotes)) return null;
+    return sheet.stakeholderNotes.find(function (item) { return item.key === key; }) || null;
+  }
+
+  function getStakeholderVisibilityForCsv(sheet, key) {
+    const stakeholder = getStakeholderByKey(sheet, key);
+    const fallback = getDefaultStakeholderVisibility(key, "default");
+    return normalizeStakeholderVisibility(stakeholder && stakeholder.showInCustomerOutput, fallback) ? "true" : "false";
+  }
+
+  function getCustomStakeholdersForCsv(sheet) {
+    return JSON.stringify((Array.isArray(sheet.stakeholderNotes) ? sheet.stakeholderNotes : [])
+      .filter(function (item) { return item.type === "custom"; })
+      .map(function (item) {
+        return {
+          id: item.id,
+          key: item.key,
+          label: item.label,
+          content: item.content,
+          showInCustomerOutput: Boolean(item.showInCustomerOutput)
+        };
+      }));
   }
 
   function getCsvValue(sheet, key) {
@@ -758,6 +834,10 @@
     }
     if (isCoreKey(key)) return getCoreNoteContent(sheet, key);
     if (["wife", "husband", "parents"].includes(key)) return getStakeholderContent(sheet, key);
+    if (key === STAKEHOLDER_SHOW_COLUMNS.wife) return getStakeholderVisibilityForCsv(sheet, "wife");
+    if (key === STAKEHOLDER_SHOW_COLUMNS.husband) return getStakeholderVisibilityForCsv(sheet, "husband");
+    if (key === STAKEHOLDER_SHOW_COLUMNS.parents) return getStakeholderVisibilityForCsv(sheet, "parents");
+    if (key === "customStakeholders") return getCustomStakeholdersForCsv(sheet);
     return "";
   }
 
@@ -838,6 +918,21 @@
     return rows;
   }
 
+  function hasCsvColumn(record, key) {
+    return Object.prototype.hasOwnProperty.call(record, key);
+  }
+
+  function parseCustomStakeholdersCsv(value) {
+    if (!hasText(value)) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      console.warn("任意追加の関係者項目を読み込めませんでした。", error);
+      return [];
+    }
+  }
+
   function createSheetFromCsvRecord(record) {
     const now = new Date().toISOString();
     const sheet = {
@@ -867,7 +962,26 @@
     };
     ["wife", "husband", "parents"].forEach(function (key) {
       const stakeholder = sheet.stakeholderNotes.find(function (item) { return item.key === key; });
-      if (stakeholder) stakeholder.content = String(record[key] || "");
+      if (stakeholder) {
+        const showColumn = STAKEHOLDER_SHOW_COLUMNS[key];
+        stakeholder.content = String(record[key] || "");
+        stakeholder.showInCustomerOutput = normalizeStakeholderVisibility(
+          hasCsvColumn(record, showColumn) ? record[showColumn] : undefined,
+          getDefaultStakeholderVisibility(key, "default")
+        );
+      }
+    });
+    parseCustomStakeholdersCsv(record.customStakeholders).forEach(function (item) {
+      const id = String(item.id || generateUniqueId("ST"));
+      sheet.stakeholderNotes.push({
+        id: id,
+        type: "custom",
+        key: String(item.key || "custom_" + id),
+        label: String(item.label || "補足項目"),
+        content: String(item.content || ""),
+        deletable: true,
+        showInCustomerOutput: normalizeStakeholderVisibility(item.showInCustomerOutput, false)
+      });
     });
     return normalizeSheet(sheet);
   }
@@ -1142,7 +1256,7 @@
     const panel = el("section", { className: "panel form-panel current-status-editor" },
       el("div", { className: "section-heading" },
         el("div", {}, el("p", { className: "section-number", text: "02" }), el("h2", { text: "現在のご状況" })),
-        el("span", { className: "field-hint", text: "お客様用の振り返りシートに表示する基本状況です。未入力の項目は出力されません。" })
+        el("span", { className: "field-hint", text: "お客様用の振り返りシートに表示します。未入力の項目も空欄として出力されます。" })
       )
     );
     const fields = CURRENT_STATUS_FIELDS.map(function (field) {
@@ -1226,7 +1340,7 @@
 
     appendChild(page, el("div", { className: "input-group-heading stakeholder-heading" },
       el("div", {}, el("p", { className: "section-number", text: "07–" }), el("h2", { text: "関係者ごとの補足" })),
-      el("p", { text: "ご主人様・奥様の内容は、お客様用資料の「ご家族の考え方とご希望」に表示されます。ご両親・追加項目は社内用のみです。" })
+      el("p", { text: "表示対象をONにした項目だけ、お客様用資料の関係者欄に表示します。ONなら未入力でも空欄として表示されます。" })
     ));
     sheet.stakeholderNotes.forEach(function (stakeholder, index) {
       appendChild(page, createStakeholderEditor(sheet, stakeholder, index + 7));
@@ -1400,20 +1514,17 @@
 
   function getCurrentStatusRows(sheet) {
     const status = normalizeCurrentStatus(sheet && sheet.currentStatus);
-    return CURRENT_STATUS_FIELDS
-      .map(function (field) {
-        return {
-          key: field.key,
-          label: field.label,
-          value: formatCurrentStatusValue(field.key, status[field.key])
-        };
-      })
-      .filter(function (row) { return row.value !== ""; });
+    return CURRENT_STATUS_FIELDS.map(function (field) {
+      return {
+        key: field.key,
+        label: field.label,
+        value: formatCurrentStatusValue(field.key, status[field.key])
+      };
+    });
   }
 
   function createCustomerCurrentStatusArea(sheet) {
     const rows = getCurrentStatusRows(sheet);
-    if (!rows.length) return null;
     return el("section", { className: "current-status-area", attrs: { "aria-label": "現在のご状況" } },
       el("div", { className: "current-status-table-wrap" },
         el("table", { className: "current-status-table" },
@@ -1479,26 +1590,47 @@
   }
 
   function getCustomerFamilyThoughtItems(sheet) {
-    return [
-      { key: "husband", label: "ご主人様", content: getStakeholderContent(sheet, "husband") },
-      { key: "wife", label: "奥様", content: getStakeholderContent(sheet, "wife") }
-    ].filter(function (item) { return hasText(item.content); });
+    const stakeholders = Array.isArray(sheet && sheet.stakeholderNotes) ? sheet.stakeholderNotes : [];
+    const defaultOrder = ["husband", "wife", "parents"];
+    const defaultItems = defaultOrder
+      .map(function (key) { return stakeholders.find(function (item) { return item.key === key; }); })
+      .filter(Boolean);
+    const customItems = stakeholders.filter(function (item) {
+      return !defaultOrder.includes(item.key);
+    });
+    return defaultItems.concat(customItems)
+      .filter(function (item) {
+        return normalizeStakeholderVisibility(
+          item.showInCustomerOutput,
+          getDefaultStakeholderVisibility(item.key, item.type)
+        );
+      })
+      .map(function (item) {
+        return {
+          key: item.key,
+          label: item.label,
+          content: String(item.content || "")
+        };
+      });
+  }
+
+  function getCustomerFamilyThoughtTitle(sheet) {
+    const customerName = getDisplayCustomerName(sheet);
+    return (customerName || "お客様") + "の考え方とご希望";
   }
 
   function createCustomerFamilyThoughtSection(sheet) {
     const items = getCustomerFamilyThoughtItems(sheet);
     if (!items.length) return null;
-    return el("section", { className: "family-thought-section", attrs: { "aria-label": "ご家族の考え方とご希望" } },
-      el("h2", { className: "family-thought-title", text: "ご家族の考え方とご希望" }),
+    const title = getCustomerFamilyThoughtTitle(sheet);
+    return el("section", { className: "family-thought-section", attrs: { "aria-label": title } },
+      el("h2", { className: "family-thought-title", text: title }),
       el("div", {
-        className: "family-thought-columns",
+        className: "family-thought-content",
         attrs: { "data-count": String(items.length) }
       },
         items.map(function (item) {
-          return el("section", { className: "family-thought-column family-thought-" + item.key },
-            el("h3", { className: "family-thought-person", text: item.label }),
-            el("p", { className: "family-thought-body", text: item.content })
-          );
+          return el("p", { className: "family-thought-body family-thought-entry", text: item.content });
         })
       )
     );
@@ -1649,6 +1781,24 @@
       content: stakeholder.content,
       onInput: function (content) { updateStakeholderNote(sheet.sheetId, stakeholder.id, content); }
     });
+    const outputToggleId = "stakeholder-output-" + stakeholder.id;
+    const outputToggle = el("input", {
+      id: outputToggleId,
+      type: "checkbox",
+      checked: normalizeStakeholderVisibility(
+        stakeholder.showInCustomerOutput,
+        getDefaultStakeholderVisibility(stakeholder.key, stakeholder.type)
+      )
+    });
+    outputToggle.addEventListener("change", function () {
+      updateStakeholderCustomerOutputVisibility(sheet.sheetId, stakeholder.id, outputToggle.checked);
+    });
+    appendChild(editor.querySelector(".note-editor-footer"),
+      el("label", { className: "preview-choice stakeholder-output-toggle", attrs: { for: outputToggleId } },
+        outputToggle,
+        el("span", { text: "お客様用PDFに反映する" })
+      )
+    );
     if (!stakeholder.deletable) return editor;
 
     const heading = editor.querySelector(".note-editor-head > div");
@@ -1674,13 +1824,19 @@
   function createStakeholderAddForm(sheetId) {
     const form = el("form", { className: "panel add-stakeholder" });
     const field = makeField("追加する補足項目名", "stakeholderLabel", "text", "", { required: true, placeholder: "例：お子様、同居予定のご家族" });
+    const showId = "stakeholder-add-output-" + Math.random().toString(36).slice(2, 8);
+    const showInput = el("input", { id: showId, type: "checkbox", checked: false });
     appendChild(form, el("div", {}, el("p", { className: "section-number", text: "＋" }), el("h2", { text: "補足項目を追加" }), el("p", { className: "field-hint", text: "追加した項目は、このページを開いている間だけ保持されます。必要な場合はCSVを書き出してください。" })));
-    appendChild(form, el("div", { className: "add-stakeholder-row" }, field.wrapper, el("button", { className: "button", type: "submit", text: "補足項目を追加" })));
+    appendChild(form, el("div", { className: "add-stakeholder-row" },
+      field.wrapper,
+      el("label", { className: "preview-choice stakeholder-output-toggle", attrs: { for: showId } }, showInput, el("span", { text: "お客様用PDFに反映する" })),
+      el("button", { className: "button", type: "submit", text: "補足項目を追加" })
+    ));
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       const label = field.input.value.trim();
       if (!label) return;
-      addStakeholderNote(sheetId, label);
+      addStakeholderNote(sheetId, label, showInput.checked);
       flushPendingSave();
       showToast("補足項目を追加しました。");
       renderInputMode(sheetId);
@@ -1761,7 +1917,7 @@
     appendChild(page, createWorkspaceHeader(sheet, "customer"));
 
     const controls = el("aside", { className: "panel preview-controls no-print" },
-      el("div", {}, el("p", { className: "eyebrow", text: "OUTPUT SETTINGS" }), el("h2", { text: "表示する項目" }), el("p", { text: "チェックした4項目をPDFに出力します。ご主人様・奥様欄は入力があれば自動表示されます。文章の編集は元の社内記録を変更しません。" }))
+      el("div", {}, el("p", { className: "eyebrow", text: "OUTPUT SETTINGS" }), el("h2", { text: "PDF出力" }), el("p", { text: "現在のご状況と主要4項目は空欄でも出力します。関係者欄は入力画面の表示対象チェックで切り替えます。文章の編集は元の社内記録を変更しません。" }))
     );
     function createCustomerPdfMeta() {
       return el("div", { className: "customer-pdf-meta" },
@@ -1826,32 +1982,13 @@
       createNavButton("button", "入力モードへ戻る", function () { navigateToSheet(sheetId, "input"); })
     );
     let printButton = null;
-    function hasVisiblePreviewContent() {
-      return coreDefinitions.some(function (definition) {
-        return sheet.customerPreview.visibleCategories.includes(definition.key) && hasText(getCustomerPreviewContentFromSheet(sheet, definition.key));
-      });
-    }
-    function hasAnyPreviewContent() {
-      return coreDefinitions.some(function (definition) {
-        return hasText(getCustomerPreviewContentFromSheet(sheet, definition.key));
-      });
-    }
     function updatePreviewEmptyState() {
-      const hasCurrentStatus = getCurrentStatusRows(sheet).length > 0;
-      const hasTopPhoto = Boolean(getCustomerTopPhotoAttachment(sheet));
-      const hasFamilyThoughts = getCustomerFamilyThoughtItems(sheet).length > 0;
-      const isEmpty = !hasAnyPreviewContent() && !hasCurrentStatus && !hasTopPhoto && !hasFamilyThoughts;
-      previewEmpty.hidden = !isEmpty;
-      if (printButton) printButton.disabled = !hasVisiblePreviewContent() && !hasCurrentStatus && !hasTopPhoto && !hasFamilyThoughts;
+      previewEmpty.hidden = true;
+      if (printButton) printButton.disabled = false;
     }
 
     coreDefinitions.forEach(function (definition, index) {
-      const visible = sheet.customerPreview.visibleCategories.includes(definition.key);
       const outputLabel = getCustomerOutputLabel(definition.key);
-      const checkboxId = "visible-" + definition.key;
-      const checkbox = el("input", { id: checkboxId, type: "checkbox", checked: visible });
-      appendChild(controls, el("label", { className: "preview-choice", attrs: { for: checkboxId } }, checkbox, el("span", { text: outputLabel.title })));
-
       const value = getCustomerPreviewContent(sheetId, definition.key);
       const textareaId = "preview-" + definition.key;
       const textarea = el("textarea", { id: textareaId, className: "customer-section-body-input", value: value, attrs: { rows: "5" }, placeholder: "お客様へ共有する文章を入力してください" });
@@ -1883,7 +2020,7 @@
       }
       reflectButton.addEventListener("click", clearPreviewOverride);
       clearEditButton.addEventListener("click", clearPreviewOverride);
-      const section = el("section", { className: "customer-grid-section " + getCustomerSectionAreaClass(definition.key) + sectionLengthClass(value), attrs: visible ? {} : { hidden: "" } },
+      const section = el("section", { className: "customer-grid-section " + getCustomerSectionAreaClass(definition.key) + sectionLengthClass(value) },
         el("div", { className: "customer-section-card" },
           createCustomerGridSectionHeader(definition.key),
           el("label", { className: "sr-only", text: outputLabel.title + "の文章", attrs: { for: textareaId } }),
@@ -1895,10 +2032,6 @@
           )
         )
       );
-      checkbox.addEventListener("change", function () {
-        toggleCustomerPreviewCategory(sheetId, definition.key, checkbox.checked);
-        renderCustomerPreviewMode(sheetId);
-      });
       textarea.addEventListener("input", function () {
         updateCustomerPreviewContent(sheetId, definition.key, textarea.value);
         if (!hasCustomerPreviewOverride(sheet, definition.key)) {
