@@ -1321,6 +1321,7 @@
     appendChild(basicPanel, el("div", { className: "field-grid four-fields" }, customer.wrapper, date.wrapper, number.wrapper, title.wrapper));
     appendChild(page, basicPanel);
     appendChild(page, createCurrentStatusEditor(sheetId, sheet));
+    appendChild(page, createImageManager(sheet));
 
     appendChild(page, el("div", { className: "input-group-heading" },
       el("div", {}, el("p", { className: "section-number", text: "03–06" }), el("h2", { text: "家づくりに関する主要4項目" })),
@@ -1336,7 +1337,6 @@
       });
       appendChild(page, editor);
     });
-    appendChild(page, createImageManager(sheet));
 
     appendChild(page, el("div", { className: "input-group-heading stakeholder-heading" },
       el("div", {}, el("p", { className: "section-number", text: "07–" }), el("h2", { text: "関係者ごとの補足" })),

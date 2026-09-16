@@ -339,8 +339,27 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .add-stakeholder h2 { margin: 0; font-size: 1.04rem; }
 .add-stakeholder p { margin: 4px 0 0; }
 .add-stakeholder-row { display: grid; grid-template-columns: minmax(240px, 1fr) auto auto; gap: 12px; align-items: end; margin-top: 15px; }
-.stakeholder-output-toggle { align-self: center; color: var(--ink); font-size: 0.78rem; }
-.note-editor-footer .stakeholder-output-toggle { margin-left: auto; padding: 0; }
+.stakeholder-output-toggle {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid rgba(48, 96, 67, 0.32);
+  border-radius: 999px;
+  background: #f3f7f2;
+  color: var(--forest);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.stakeholder-output-toggle input {
+  width: 20px;
+  height: 20px;
+  margin-top: 0;
+}
+.note-editor-footer .stakeholder-output-toggle { margin-left: auto; }
 .bottom-actions { display: flex; justify-content: center; gap: 10px; padding-top: 14px; }
 
 .review-intro { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 30px; padding: clamp(23px, 4vw, 34px); }
