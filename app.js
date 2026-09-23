@@ -1102,7 +1102,7 @@
     const input = el("input", {
       id: id, name: name, type: type, value: value === undefined ? "" : value,
       placeholder: config.placeholder || "", required: config.required, min: config.min,
-      attrs: config.attrs || null
+      attrs: Object.assign({ autocomplete: "off" }, config.attrs || {})
     });
     return {
       input: input,
@@ -1356,7 +1356,12 @@
 
   function createNoteEditor(config) {
     const textareaId = "note-" + String(config.index) + "-" + Math.random().toString(36).slice(2, 6);
-    const textarea = el("textarea", { id: textareaId, value: config.content, attrs: { rows: "6" }, placeholder: config.hint });
+    const textarea = el("textarea", {
+      id: textareaId,
+      value: config.content,
+      attrs: { rows: "6", autocomplete: "off" },
+      placeholder: config.hint
+    });
     const count = el("span", { className: "character-count", text: config.content.length + "文字" });
     const status = el("span", { className: "entry-status" + (config.content.trim() ? " is-filled" : ""), text: config.content.trim() ? "入力済み" : "未入力" });
     const clear = el("button", { className: "text-button", type: "button", text: "内容をクリア" });
@@ -1731,7 +1736,8 @@
         id: captionId,
         type: "text",
         value: attachment.caption,
-        placeholder: "任意のキャプション"
+        placeholder: "任意のキャプション",
+        attrs: { autocomplete: "off" }
       });
       caption.addEventListener("input", function () { updateImageCaption(sheet.sheetId, attachment.imageId, caption.value); });
       const includeId = "include-image-" + attachment.imageId;
@@ -1804,7 +1810,13 @@
     const heading = editor.querySelector(".note-editor-head > div");
     const headingElement = heading.querySelector("h2");
     const labelId = "stakeholder-label-" + stakeholder.id;
-    const labelInput = el("input", { id: labelId, className: "stakeholder-label-input", type: "text", value: stakeholder.label, attrs: { "aria-label": "補足項目名" } });
+    const labelInput = el("input", {
+      id: labelId,
+      className: "stakeholder-label-input",
+      type: "text",
+      value: stakeholder.label,
+      attrs: { "aria-label": "補足項目名", autocomplete: "off" }
+    });
     headingElement.replaceWith(labelInput);
     labelInput.addEventListener("input", function () {
       updateStakeholderLabel(sheet.sheetId, stakeholder.id, labelInput.value);
