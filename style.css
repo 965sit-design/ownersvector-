@@ -1845,7 +1845,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .customer-mode-page .family-thought-title {
     margin: 0 0 2.4mm;
     color: #3c3430;
-    font-size: 10.5pt;
+    font-size: 11pt;
     font-weight: 800;
     line-height: 1.3;
     letter-spacing: 0.03em;
@@ -1978,5 +1978,454 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .customer-mode-page .customer-image-page,
   .customer-mode-page .customer-document-image {
     display: none !important;
+  }
+}
+
+/* Print layout: keep the document in normal page flow while retaining the
+   two-column photo/status and budget/home/land arrangements. */
+.customer-mode-page .family-thought-title,
+.customer-mode-page .customer-card-header .customer-section-number,
+.customer-mode-page .customer-card-header .customer-section-title {
+  color: #fff;
+}
+
+@media print {
+  html,
+  body,
+  #app,
+  .page,
+  .preview-layout,
+  .customer-preview-pages,
+  .customer-mode-page .customer-document,
+  .customer-mode-page .customer-text-page {
+    background: #fff;
+  }
+
+  .customer-mode-page .customer-document,
+  .customer-mode-page .customer-text-page {
+    min-height: 0;
+    padding: 7.5mm 10mm 9mm;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .customer-mode-page .customer-pdf-header {
+    grid-template-columns: minmax(0, 1fr) 36mm;
+    grid-template-rows: 8.2mm auto;
+    row-gap: 1mm;
+    margin-bottom: 3mm;
+    padding-right: 0;
+  }
+
+  .customer-mode-page .customer-output-body,
+  .customer-mode-page .customer-output-body.has-top-info,
+  .customer-mode-page .customer-output-body.has-family-info,
+  .customer-mode-page .customer-output-body.has-top-info.has-family-info {
+    display: block;
+    margin-top: 0;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .customer-mode-page .top-info-row,
+  .customer-mode-page .customer-output-body.has-family-info .top-info-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 5mm;
+    min-height: 47mm;
+    margin: 0 0 3.5mm;
+    align-items: center;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .customer-mode-page .top-photo-area,
+  .customer-mode-page .customer-output-body.has-family-info .top-photo-area {
+    min-height: 0;
+    padding: 2mm 0;
+  }
+
+  .customer-mode-page .top-photo-frame,
+  .customer-mode-page .customer-output-body.has-family-info .top-photo-frame {
+    min-height: 0;
+  }
+
+  .customer-mode-page .top-reference-photo,
+  .customer-mode-page .customer-output-body.has-family-info .top-reference-photo {
+    max-width: 84mm;
+    max-height: 42mm;
+    object-fit: contain;
+  }
+
+  .customer-mode-page .current-status-area {
+    width: 100%;
+    max-width: 78mm;
+    justify-self: center;
+  }
+
+  .customer-mode-page .current-status-table {
+    font-size: 7.5pt;
+    line-height: 1.35;
+  }
+
+  .customer-mode-page .current-status-table th,
+  .customer-mode-page .current-status-table td {
+    padding: 1.2mm 2.2mm;
+  }
+
+  .customer-mode-page .family-thought-section {
+    margin: 0 0 3.5mm;
+    min-height: 37mm;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .customer-mode-page .family-thought-title {
+    display: flex;
+    align-items: center;
+    min-height: 9mm;
+    color: #fff;
+    margin: 0;
+    padding: 2mm 3mm;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #BEB7AD;
+    font-weight: 800;
+    font-size: 11pt;
+  }
+
+  .customer-mode-page .family-thought-content {
+    gap: 2mm;
+    padding: 4mm;
+  }
+
+  .customer-mode-page .family-thought-body {
+    min-height: 5mm;
+    font-size: 7pt;
+    line-height: 1.8;
+  }
+
+  .customer-mode-page .reason-section {
+    margin: 0 0 4mm;
+  }
+
+  .customer-mode-page .customer-lower-grid,
+  .customer-mode-page .customer-output-body.has-family-info .customer-lower-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 5mm;
+    min-height: 108mm;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .customer-mode-page .customer-right-stack {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 5mm;
+    min-height: 0;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .customer-mode-page .customer-grid-section .customer-section-card {
+    padding: 0 0 2mm;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #fff;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  .customer-mode-page .reason-section .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .reason-section .customer-section-card {
+    min-height: 42mm;
+  }
+
+  .customer-mode-page .budget-section .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .budget-section .customer-section-card {
+    min-height: 108mm;
+  }
+
+  .customer-mode-page .customer-right-stack .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .customer-right-stack .customer-section-card {
+    min-height: calc((108mm - 5mm) / 2);
+  }
+
+  .customer-mode-page .customer-card-header {
+    min-height: 9mm;
+    align-items: center;
+    margin: 0;
+    padding: 2mm 3mm;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #BEB7AD;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .customer-mode-page .customer-card-header .customer-section-number,
+  .customer-mode-page .customer-card-header .customer-section-title {
+    font-size: 11pt;
+  }
+
+  .customer-mode-page .customer-grid-section .customer-section-body {
+    padding: 4mm 4mm 0;
+    font-size: 7pt;
+    line-height: 1.8;
+  }
+
+  /* Very long notes need a continuous reading order across pages. */
+  .customer-mode-page .customer-output-body .customer-lower-grid:has(.is-very-long) {
+    display: block;
+    min-height: 0;
+  }
+
+  .customer-mode-page .customer-lower-grid:has(.is-very-long) .customer-right-stack {
+    display: block;
+    height: auto;
+  }
+
+  .customer-mode-page .customer-lower-grid:has(.is-very-long) .customer-grid-section {
+    height: auto;
+    margin-bottom: 4mm;
+  }
+
+  .customer-mode-page .customer-lower-grid:has(.is-very-long) .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .customer-lower-grid:has(.is-very-long) .customer-section-card {
+    height: auto;
+    min-height: 0;
+  }
+}
+
+/* Match the on-screen customer sheet to the white, flat print layout.
+   Editing controls remain available on screen and hidden by the print rules. */
+@media screen {
+  .customer-mode-page .customer-document {
+    min-height: 1270px;
+    padding: 38px 46px 44px;
+    border: 1px solid #e5e1dc;
+    background: #fff;
+    box-shadow: 0 6px 18px rgba(45, 36, 31, 0.08);
+  }
+
+  .customer-mode-page .customer-pdf-header {
+    grid-template-columns: minmax(0, 1fr) 136px;
+    grid-template-rows: 31px auto;
+    row-gap: 4px;
+    min-height: 0;
+    margin-bottom: 18px;
+    padding: 0;
+  }
+
+  .customer-mode-page .customer-pdf-logo-wrap,
+  .customer-mode-page .customer-pdf-logo-crop {
+    width: 136px;
+    height: 31px;
+  }
+
+  .customer-mode-page .customer-pdf-logo {
+    top: -31px;
+    left: -8px;
+    width: 153px;
+  }
+
+  .customer-mode-page .customer-pdf-rule {
+    border-top-width: 1px;
+  }
+
+  .customer-mode-page .customer-output-body,
+  .customer-mode-page .customer-output-body.has-top-info,
+  .customer-mode-page .customer-output-body.has-family-info,
+  .customer-mode-page .customer-output-body.has-top-info.has-family-info {
+    display: block;
+    margin-top: 0;
+  }
+
+  .customer-mode-page .top-info-row,
+  .customer-mode-page .customer-output-body.has-family-info .top-info-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    min-height: 185px;
+    margin-bottom: 18px;
+    align-items: center;
+  }
+
+  .customer-mode-page .top-photo-area,
+  .customer-mode-page .customer-output-body.has-family-info .top-photo-area {
+    min-height: 0;
+    padding: 10px 0;
+  }
+
+  .customer-mode-page .top-photo-frame,
+  .customer-mode-page .customer-output-body.has-family-info .top-photo-frame {
+    min-height: 0;
+  }
+
+  .customer-mode-page .top-reference-photo,
+  .customer-mode-page .customer-output-body.has-family-info .top-reference-photo {
+    max-height: 165px;
+    object-fit: contain;
+  }
+
+  .customer-mode-page .current-status-area {
+    width: 100%;
+    max-width: 320px;
+    justify-self: center;
+  }
+
+  .customer-mode-page .current-status-table {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .customer-mode-page .current-status-table th,
+  .customer-mode-page .current-status-table td {
+    padding: 5px 8px;
+    border-bottom-width: 1px;
+  }
+
+  .customer-mode-page .current-status-table th {
+    border-right-width: 1px;
+  }
+
+  .customer-mode-page .family-thought-section {
+    margin: 0 0 18px;
+    min-height: 140px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+  }
+
+  .customer-mode-page .family-thought-title {
+    display: flex;
+    align-items: center;
+    min-height: 34px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #BEB7AD;
+    font-weight: 800;
+    font-size: 14.667px;
+  }
+
+  .customer-mode-page .family-thought-content {
+    gap: 8px;
+    padding: 16px;
+  }
+
+  .customer-mode-page .family-thought-body {
+    min-height: 20px;
+    font-size: 9.333px;
+    line-height: 1.8;
+  }
+
+  .customer-mode-page .reason-section {
+    margin-bottom: 16px;
+  }
+
+  .customer-mode-page .customer-lower-grid,
+  .customer-mode-page .customer-output-body.has-family-info .customer-lower-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 19px;
+    min-height: 408px;
+  }
+
+  .customer-mode-page .customer-right-stack {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 19px;
+  }
+
+  .customer-mode-page .customer-grid-section .customer-section-card {
+    min-height: 0;
+    padding: 0 0 8px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #fff;
+  }
+
+  .customer-mode-page .reason-section .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .reason-section .customer-section-card {
+    min-height: 159px;
+  }
+
+  .customer-mode-page .budget-section .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .budget-section .customer-section-card {
+    min-height: 408px;
+  }
+
+  .customer-mode-page .customer-right-stack .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .customer-right-stack .customer-section-card {
+    min-height: 194px;
+  }
+
+  .customer-mode-page .customer-card-header {
+    min-height: 34px;
+    align-items: center;
+    margin: 0;
+    padding: 8px 12px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: #BEB7AD;
+  }
+
+  .customer-mode-page .customer-section-number {
+    font-size: 14.667px;
+  }
+
+  .customer-mode-page .customer-grid-section .customer-section-title {
+    font-size: 14.667px;
+  }
+
+  .customer-mode-page .customer-grid-section .customer-section-body-input {
+    min-height: 64px;
+    padding: 16px 16px 0;
+    font-size: 9.333px;
+    line-height: 1.8;
+  }
+
+  .customer-mode-page .preview-edit-meta {
+    padding: 8px 12px 0;
+    border-top: 0;
+  }
+}
+
+@media screen and (max-width: 980px) {
+  .customer-mode-page .top-info-row,
+  .customer-mode-page .customer-output-body.has-family-info .top-info-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .customer-mode-page .current-status-area {
+    width: 100%;
+    max-width: none;
+  }
+
+  .customer-mode-page .customer-lower-grid,
+  .customer-mode-page .customer-output-body.has-family-info .customer-lower-grid {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  .customer-mode-page .budget-section .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .budget-section .customer-section-card,
+  .customer-mode-page .customer-right-stack .customer-section-card,
+  .customer-mode-page .customer-output-body.has-family-info .customer-right-stack .customer-section-card {
+    min-height: 220px;
   }
 }

@@ -1976,7 +1976,8 @@
     }
     function resizePreviewTextarea(textarea) {
       textarea.style.height = "auto";
-      textarea.style.height = Math.max(textarea.scrollHeight, 150) + "px";
+      const minimumHeight = parseFloat(window.getComputedStyle(textarea).minHeight) || 64;
+      textarea.style.height = Math.max(textarea.scrollHeight, minimumHeight) + "px";
     }
     const textDocument = createCustomerDocumentPage("customer-text-page customer-document-text", true, true, "お客様用資料プレビュー 1ページ目");
     const currentStatusArea = createCustomerCurrentStatusArea(sheet);
@@ -2003,7 +2004,7 @@
       const outputLabel = getCustomerOutputLabel(definition.key);
       const value = getCustomerPreviewContent(sheetId, definition.key);
       const textareaId = "preview-" + definition.key;
-      const textarea = el("textarea", { id: textareaId, className: "customer-section-body-input", value: value, attrs: { rows: "5" }, placeholder: "お客様へ共有する文章を入力してください" });
+      const textarea = el("textarea", { id: textareaId, className: "customer-section-body-input", value: value, attrs: { rows: "3" }, placeholder: "お客様へ共有する文章を入力してください" });
       const printText = el("p", { className: "preview-print-text customer-section-body print-only", text: value });
       const characterCount = el("span", { className: "character-count", text: value.length + "文字" });
       const overrideNotice = el("p", {
