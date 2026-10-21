@@ -1093,7 +1093,7 @@
   }
 
   function setPageTitle(title) {
-    document.title = title + "｜ベクトルシート";
+    document.title = title + "｜ベクトルシート A3デモ";
   }
 
   function makeField(labelText, name, type, value, options) {
@@ -1362,11 +1362,9 @@
       attrs: { rows: "6", autocomplete: "off" },
       placeholder: config.hint
     });
-    const count = el("span", { className: "character-count", text: config.content.length + "文字" });
     const status = el("span", { className: "entry-status" + (config.content.trim() ? " is-filled" : ""), text: config.content.trim() ? "入力済み" : "未入力" });
     const clear = el("button", { className: "text-button", type: "button", text: "内容をクリア" });
     function updateVisuals() {
-      count.textContent = textarea.value.length + "文字";
       const filled = Boolean(textarea.value.trim());
       status.textContent = filled ? "入力済み" : "未入力";
       status.classList.toggle("is-filled", filled);
@@ -1389,7 +1387,7 @@
       ),
       el("label", { className: "sr-only", text: config.label + "の内容", attrs: { for: textareaId } }),
       textarea,
-      el("div", { className: "note-editor-footer" }, count, clear)
+      el("div", { className: "note-editor-footer" }, clear)
     );
   }
 
@@ -1600,10 +1598,7 @@
     const defaultItems = defaultOrder
       .map(function (key) { return stakeholders.find(function (item) { return item.key === key; }); })
       .filter(Boolean);
-    const customItems = stakeholders.filter(function (item) {
-      return !defaultOrder.includes(item.key);
-    });
-    return defaultItems.concat(customItems)
+    return defaultItems
       .filter(function (item) {
         return normalizeStakeholderVisibility(
           item.showInCustomerOutput,
@@ -1636,6 +1631,24 @@
       },
         items.map(function (item) {
           return el("p", { className: "family-thought-body family-thought-entry", text: item.content });
+        })
+      )
+    );
+  }
+
+  function createCustomerLifestyleSupplement(sheet) {
+    const items = (sheet.stakeholderNotes || []).filter(function (item) {
+      return !["husband", "wife", "parents"].includes(item.key) &&
+        normalizeStakeholderVisibility(item.showInCustomerOutput, false);
+    });
+    return el("section", { className: "a3-supplement-section" },
+      el("h2", { className: "family-thought-title", text: "暮らしに関する補足" }),
+      el("div", { className: "family-thought-content" },
+        items.map(function (item) {
+          return el("div", { className: "a3-supplement-entry" },
+            el("h3", { text: item.label }),
+            el("p", { className: "family-thought-body", text: String(item.content || "") })
+          );
         })
       )
     );
@@ -1929,7 +1942,7 @@
     appendChild(page, createWorkspaceHeader(sheet, "customer"));
 
     const controls = el("aside", { className: "panel preview-controls no-print" },
-      el("div", {}, el("p", { className: "eyebrow", text: "OUTPUT SETTINGS" }), el("h2", { text: "PDF出力" }), el("p", { text: "現在のご状況と主要4項目は空欄でも出力します。関係者欄は入力画面の表示対象チェックで切り替えます。文章の編集は元の社内記録を変更しません。" }))
+      el("div", {}, el("p", { className: "eyebrow", text: "A3 DEMO" }), el("h2", { text: "A3横・二つ折り出力" }), el("p", { text: "A3横・倍率100%で印刷してください。中央で折るとA4サイズになります。お子様などの任意追加項目は「暮らしに関する補足」に反映します。長文は続きの用紙に流れます。" }))
     );
     function createCustomerPdfMeta() {
       return el("div", { className: "customer-pdf-meta" },
@@ -1979,15 +1992,19 @@
       const minimumHeight = parseFloat(window.getComputedStyle(textarea).minHeight) || 64;
       textarea.style.height = Math.max(textarea.scrollHeight, minimumHeight) + "px";
     }
-    const textDocument = createCustomerDocumentPage("customer-text-page customer-document-text", true, true, "お客様用資料プレビュー 1ページ目");
+    const textDocument = el("article", { className: "customer-document customer-text-page a3-spread", attrs: { "aria-label": "A3横・二つ折りのお客様用資料" } });
+    const leftPanel = el("section", { className: "a3-left-panel", attrs: { "aria-label": "左面：基本情報・考え方・予算・お家" } });
+    const rightPanel = el("section", { className: "a3-right-panel", attrs: { "aria-label": "右面：参考写真・住まいのご希望" } });
     const currentStatusArea = createCustomerCurrentStatusArea(sheet);
-    const topInfoRow = createCustomerTopInfoRow(sheet, currentStatusArea);
+    const photoArea = createCustomerTopPhotoArea(sheet) || el("section", { className: "top-photo-area a3-photo-empty", attrs: { "aria-label": "参考写真（未添付）" } });
     const familyThoughtSection = createCustomerFamilyThoughtSection(sheet);
-    const customerDocumentSections = el("div", { className: "customer-output-body" + (topInfoRow ? " has-top-info" : "") + (familyThoughtSection ? " has-family-info" : "") });
-    if (topInfoRow) appendChild(customerDocumentSections, topInfoRow);
+    appendChild(leftPanel, el("div", { className: "a3-basic-info" }, createCustomerDocumentHeader(true), currentStatusArea));
+    const customerDocumentSections = el("div", { className: "customer-output-body a3-left-body" });
     if (familyThoughtSection) appendChild(customerDocumentSections, familyThoughtSection);
-    const customerLowerGrid = el("div", { className: "customer-lower-grid" });
-    const customerRightStack = el("div", { className: "customer-right-stack" });
+    else customerDocumentSections.classList.add("a3-no-family");
+    const customerLowerGrid = el("div", { className: "a3-right-grid" });
+    const leftLowerGrid = el("div", { className: "a3-left-lower-grid" });
+    appendChild(customerDocumentSections, leftLowerGrid);
     const previewEmpty = el("div", { className: "customer-preview-empty no-print" },
       el("p", { className: "empty-state-kicker", text: "NO OUTPUT CONTENT" }),
       el("h2", { text: "お客様用に表示できる内容がまだ入力されていません" }),
@@ -2006,7 +2023,6 @@
       const textareaId = "preview-" + definition.key;
       const textarea = el("textarea", { id: textareaId, className: "customer-section-body-input", value: value, attrs: { rows: "3" }, placeholder: "お客様へ共有する文章を入力してください" });
       const printText = el("p", { className: "preview-print-text customer-section-body print-only", text: value });
-      const characterCount = el("span", { className: "character-count", text: value.length + "文字" });
       const overrideNotice = el("p", {
         className: "preview-origin-note",
         text: "入力内容が更新されています。お客様用文章を元の入力内容に戻すこともできます。",
@@ -2019,7 +2035,6 @@
         const current = getCustomerPreviewContent(sheetId, definition.key);
         textarea.value = current;
         printText.textContent = current;
-        characterCount.textContent = current.length + "文字";
         syncSectionLengthClass(section, current);
         resizePreviewTextarea(textarea);
         const hasOverride = hasCustomerPreviewOverride(sheet, definition.key);
@@ -2040,7 +2055,7 @@
           textarea,
           printText,
           el("div", { className: "preview-edit-meta no-print" },
-            el("div", {}, characterCount, overrideNotice),
+            el("div", {}, overrideNotice),
             editActions
           )
         )
@@ -2051,7 +2066,6 @@
           textarea.value = getCustomerPreviewContent(sheetId, definition.key);
         }
         printText.textContent = textarea.value;
-        characterCount.textContent = textarea.value.length + "文字";
         syncSectionLengthClass(section, textarea.value);
         resizePreviewTextarea(textarea);
         const hasOverride = hasCustomerPreviewOverride(sheet, definition.key);
@@ -2060,27 +2074,25 @@
         updatePreviewEmptyState();
       });
       if (definition.key === "scheduleReason") {
-        appendChild(customerDocumentSections, section);
-      } else if (definition.key === "budget") {
         appendChild(customerLowerGrid, section);
-      } else if (definition.key === "building" || definition.key === "land") {
-        appendChild(customerRightStack, section);
+      } else if (definition.key === "budget" || definition.key === "building") {
+        appendChild(leftLowerGrid, section);
       } else {
-        appendChild(customerDocumentSections, section);
+        appendChild(customerLowerGrid, section);
       }
       window.requestAnimationFrame(function () { resizePreviewTextarea(textarea); });
     });
-    appendChild(customerLowerGrid, customerRightStack);
-    appendChild(customerDocumentSections, customerLowerGrid);
+    appendChild(customerLowerGrid, createCustomerLifestyleSupplement(sheet));
     appendChild(customerDocumentSections, previewEmpty);
 
     printButton = el("button", { className: "button", type: "button", text: "印刷・PDF保存" });
     printButton.addEventListener("click", printCustomerPreview);
     appendChild(controls, printButton);
-    appendChild(textDocument, customerDocumentSections);
-    appendChild(textDocument, el("footer", { className: "customer-document-footer" },
-      el("p", { text: "お打ち合わせ内容に相違がないか、次回の冒頭でご一緒に確認させてください。" })
-    ));
+    appendChild(leftPanel, customerDocumentSections);
+    appendChild(rightPanel, photoArea);
+    appendChild(rightPanel, customerLowerGrid);
+    appendChild(textDocument, leftPanel);
+    appendChild(textDocument, rightPanel);
     updatePreviewEmptyState();
     appendChild(page, el("div", { className: "preview-layout" }, controls, el("div", { className: "customer-preview-pages" }, textDocument)));
     app.replaceChildren(page);

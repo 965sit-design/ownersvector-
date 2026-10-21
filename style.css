@@ -2429,3 +2429,210 @@ button, a { -webkit-tap-highlight-color: transparent; }
     min-height: 220px;
   }
 }
+
+/* A3 landscape demo: two independent A4 portrait faces, with a fold gutter. */
+@page { size: A3 landscape; margin: 0; }
+
+#app:has(.a3-spread) { width: min(1700px, calc(100% - 40px)); }
+.customer-mode-page .preview-layout { grid-template-columns: minmax(0, 1fr); }
+.customer-mode-page .preview-controls { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.customer-mode-page .preview-controls > div { max-width: 900px; }
+.customer-mode-page .preview-controls > .button { flex: 0 0 auto; }
+.customer-mode-page .customer-document.a3-spread {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16mm;
+  width: min(100%, 420mm);
+  min-height: 297mm;
+  padding: 10mm;
+  background: #fff;
+  color: #332e2a;
+}
+.a3-left-panel, .a3-right-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8mm;
+  min-width: 0;
+  min-height: 277mm;
+  break-inside: auto;
+}
+.a3-basic-info {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8mm;
+  min-height: 65mm;
+  align-items: center;
+}
+.customer-mode-page .a3-spread .customer-pdf-header {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8mm;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.customer-mode-page .a3-spread .customer-pdf-meta {
+  order: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4mm;
+  font-size: 9.75pt;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.customer-mode-page .a3-spread .customer-pdf-meta-item { display: flex; flex-wrap: wrap; gap: 2mm; white-space: normal; }
+.customer-mode-page .a3-spread .meta-divider,
+.customer-mode-page .a3-spread .customer-pdf-rule { display: none; }
+.customer-mode-page .a3-spread .customer-pdf-logo-wrap { position: static; width: 54mm; height: 12.3mm; }
+.customer-mode-page .a3-spread .customer-pdf-logo-crop { width: 54mm; height: 12.3mm; }
+.customer-mode-page .a3-spread .customer-pdf-logo { width: 60.6mm; top: -12.3mm; left: -3.15mm; }
+.customer-mode-page .a3-spread .current-status-area { grid-column: auto; width: 100%; max-width: none; }
+.customer-mode-page .a3-spread .current-status-table { font-size: 9.75pt; line-height: 1.5; }
+.customer-mode-page .a3-spread .current-status-table th,
+.customer-mode-page .a3-spread .current-status-table td { padding: 2mm; border-bottom: 0.2mm solid #928b83; }
+.customer-mode-page .a3-spread .current-status-table th { white-space: normal; border-right: 0.2mm solid #928b83; }
+.customer-mode-page .a3-spread .customer-output-body.a3-left-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(min-content, 1fr));
+  grid-template-areas: none;
+  flex: 1;
+  gap: 8mm;
+  margin: 0;
+}
+.customer-mode-page .a3-spread .a3-left-body.a3-no-family { grid-template-rows: minmax(min-content, 1fr); }
+.customer-mode-page .a3-spread .family-thought-section,
+.customer-mode-page .a3-spread .reason-section,
+.customer-mode-page .a3-spread .customer-grid-section,
+.customer-mode-page .a3-spread .a3-supplement-section {
+  grid-area: auto;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.customer-mode-page .a3-spread .top-photo-area {
+  grid-column: auto;
+  min-height: 65mm;
+  padding: 3mm 0;
+  margin: 0;
+}
+.customer-mode-page .a3-spread .top-photo-frame { min-height: 0; }
+.customer-mode-page .a3-spread .top-reference-photo { max-width: min(100%, 115mm); max-height: 59mm; object-fit: contain; }
+.a3-photo-empty { border: 0.2mm dashed #ddd7d0; }
+.a3-right-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: repeat(2, minmax(min-content, 1fr));
+  flex: 1;
+  gap: 8mm;
+  min-height: 0;
+}
+.a3-left-lower-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8mm;
+  min-width: 0;
+  min-height: 0;
+}
+.customer-mode-page .a3-spread .a3-right-grid .reason-section { grid-column: 1 / -1; }
+.customer-mode-page .a3-spread .customer-grid-section .customer-section-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: #fff;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+.customer-mode-page .a3-spread .family-thought-title,
+.customer-mode-page .a3-spread .customer-card-header {
+  display: flex;
+  align-items: center;
+  min-height: 12mm;
+  margin: 0;
+  padding: 2.5mm 4mm;
+  color: #fff;
+  background: #BEB7AD;
+  font-size: 12pt;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.customer-mode-page .a3-spread .customer-card-header .customer-section-title,
+.customer-mode-page .a3-spread .customer-card-header .customer-section-number { color: #fff; font-size: 12pt; }
+.customer-mode-page .a3-spread .family-thought-content { gap: 3mm; padding: 5mm 4mm; }
+.customer-mode-page .a3-spread .family-thought-body,
+.customer-mode-page .a3-spread .customer-grid-section .customer-section-body,
+.customer-mode-page .a3-spread .customer-grid-section .customer-section-body-input {
+  font-size: 10pt;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.customer-mode-page .a3-spread .customer-grid-section .customer-section-body,
+.customer-mode-page .a3-spread .customer-grid-section .customer-section-body-input { padding: 5mm 4mm; margin: 0; min-height: 0; }
+.a3-supplement-entry h3 { margin: 0 0 2mm; font-size: 10pt; font-weight: 700; }
+.customer-mode-page .a3-spread .preview-edit-meta { padding: 0 4mm; }
+.customer-mode-page .a3-spread .preview-edit-meta:has([hidden]):not(:has(.preview-edit-actions:not([hidden]))) { display: none; }
+
+@media screen and (max-width: 1100px) {
+  .customer-mode-page .customer-document.a3-spread { grid-template-columns: minmax(0, 1fr); width: min(100%, 210mm); }
+  .a3-right-panel { padding-top: 10mm; border-top: 1px dashed #d0c9c0; }
+  .customer-mode-page .preview-controls { display: block; }
+}
+
+@media print {
+  html, body, #app, #app:has(.a3-spread), .page, .preview-layout, .customer-preview-pages {
+    width: 420mm;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+  .customer-mode-page .customer-document.a3-spread {
+    display: grid;
+    width: 420mm;
+    min-height: 295mm;
+    height: auto;
+    box-sizing: border-box;
+    padding: 10mm;
+    margin: 0;
+    border: 0;
+    box-shadow: none;
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  /* Leave 2mm for print rounding; do not clip overflowing text. */
+  .customer-mode-page .a3-spread .a3-left-panel,
+  .customer-mode-page .a3-spread .a3-right-panel { min-height: 275mm; }
+  .customer-mode-page .customer-document.a3-spread:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+  .customer-mode-page .a3-spread .customer-pdf-meta-item { gap: 2mm; }
+  .a3-photo-empty { border: 0; }
+  .customer-mode-page .a3-spread .preview-edit-meta { display: none !important; }
+
+  /* Oversized notes use continuous flow instead of stretching every quadrant. */
+  .customer-mode-page .customer-document.a3-spread:has(.is-very-long) { display: block; min-height: 0; }
+  .a3-spread:has(.is-very-long) .a3-left-panel,
+  .a3-spread:has(.is-very-long) .a3-right-panel { display: block; min-height: 0; }
+  .customer-mode-page .a3-spread:has(.is-very-long) .customer-output-body.a3-left-body,
+  .a3-spread:has(.is-very-long) .a3-right-grid,
+  .a3-spread:has(.is-very-long) .a3-left-lower-grid { display: block; }
+  .customer-mode-page .a3-spread:has(.is-very-long) .family-thought-section,
+  .customer-mode-page .a3-spread:has(.is-very-long) .customer-grid-section,
+  .customer-mode-page .a3-spread:has(.is-very-long) .a3-supplement-section { margin-bottom: 8mm; }
+  .customer-mode-page .a3-spread:has(.is-very-long) .customer-grid-section .customer-section-card { display: block; height: auto; }
+  .a3-spread:has(.is-very-long) .a3-right-panel { break-before: page; }
+}
